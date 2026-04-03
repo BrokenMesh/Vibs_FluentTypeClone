@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_ADMIN_EMAIL: ${VITE_ADMIN_EMAIL:-elkordhicham@gmail.com}
+    image: fluenttype:latest
+    container_name: fluenttype
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - fluenttype-data:/data
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /data/fluenttype.db
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-elkordhicham@gmail.com}
+
+volumes:
+  fluenttype-data:
