@@ -14,7 +14,7 @@
       <!-- Add form -->
       <div v-if="showAdd" class="card space-y-3">
         <p class="text-sm text-zinc-400">Add a word in <span class="text-brand-400">{{ profile.activeProfile.target_language }}</span> that you've learned</p>
-        <div class="flex gap-2">
+        <div class="flex flex-col sm:flex-row gap-2">
           <input v-model="newWord" class="input flex-1" :placeholder="`Word in ${profile.activeProfile.target_language}`" />
           <input v-model="newTranslation" class="input flex-1" :placeholder="`Translation in ${profile.activeProfile.native_language}`" />
           <button @click="addWord" class="btn-primary whitespace-nowrap" :disabled="addLoading">
@@ -25,9 +25,9 @@
       </div>
 
       <!-- Filter / search -->
-      <div class="flex gap-2 items-center">
-        <input v-model="search" class="input max-w-xs" placeholder="search…" />
-        <select v-model="sortBy" class="input max-w-xs">
+      <div class="flex flex-wrap gap-2 items-center">
+        <input v-model="search" class="input flex-1 min-w-0" placeholder="search…" />
+        <select v-model="sortBy" class="input w-auto">
           <option value="created_at">recent</option>
           <option value="times_seen">most seen</option>
           <option value="accuracy">accuracy</option>

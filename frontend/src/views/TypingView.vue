@@ -41,7 +41,7 @@
     <!-- Typing test -->
     <template v-else-if="currentSentence && !doneForToday">
       <!-- Header row -->
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex gap-2">
           <button
             @click="setMode('challenge')"
@@ -52,7 +52,7 @@
             :class="['btn text-sm px-3 py-1', mode === 'practice' ? 'bg-zinc-700 text-zinc-100' : 'btn-ghost']"
           >practice</button>
         </div>
-        <div class="text-xs text-zinc-600 flex gap-3 items-center">
+        <div class="text-xs text-zinc-600 flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started">{{ elapsedSeconds }}s</span>
           <span v-if="queue.due > 0" class="text-yellow-500">{{ queue.due }} due</span>
           <span v-if="queue.newToday > 0">{{ queue.newToday }} new</span>

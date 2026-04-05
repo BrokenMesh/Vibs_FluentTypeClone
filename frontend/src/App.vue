@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen flex flex-col">
     <NavBar v-if="auth.accessToken" />
-    <main class="flex-1 container mx-auto px-4 py-8 max-w-4xl">
+    <main class="flex-1 container mx-auto px-3 py-4 md:px-4 md:py-8 max-w-4xl">
       <RouterView />
     </main>
   </div>
