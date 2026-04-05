@@ -9,7 +9,7 @@ router.use(requireAuth);
 
 const DAILY_BATCH_SIZE = 10;
 
-function today() {
+export function today() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
@@ -70,7 +70,7 @@ async function ensureDailyWord(db, profile) {
  * Generate and persist one sentence, retrying up to maxAttempts times to avoid duplicates.
  * existingTexts is a shared array — append to it so parallel siblings see each other's results.
  */
-async function generateAndSave(db, profile, dailyWord, existingTexts, batchDate) {
+export async function generateAndSave(db, profile, dailyWord, existingTexts, batchDate) {
   const knownWords = db.prepare(
     'SELECT word FROM vocabulary WHERE profile_id = ? ORDER BY times_seen DESC LIMIT 50'
   ).all(profile.id).map(r => r.word);

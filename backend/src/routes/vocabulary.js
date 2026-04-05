@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb, rowid } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
+import { generateAndSave, today } from './sentences.js';
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -46,6 +47,20 @@ router.post('/', (req, res) => {
 
   const vocab = db.prepare('SELECT * FROM vocabulary WHERE id = ?').get(rowid(result));
   res.status(201).json(vocab);
+
+  // Fire off 10 sentences in the background anchored to the new word
+  const batchDate = today();
+  const existingTexts = db.prepare(
+    'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
+  ).all(profile.id).map(r => r.target_text);
+  const anchorWord = { word: vocab.word };
+
+  Promise.allSettled(
+    Array.from({ length: 10 }, () => generateAndSave(db, profile, anchorWord, existingTexts, batchDate))
+  ).then(results => {
+    const ok = results.filter(r => r.status === 'fulfilled' && r.value).length;
+    console.log(`Generated ${ok}/10 sentences for new word "${vocab.word}"`);
+  }).catch(e => console.error('Background sentence gen failed:', e));
 });
 
 // DELETE /profiles/:profileId/vocabulary/:wordId
