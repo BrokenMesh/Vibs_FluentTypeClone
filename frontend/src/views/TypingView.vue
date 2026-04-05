@@ -35,6 +35,8 @@
       :new-skill="newSkill"
       :days-until-review="daysUntilReview"
       :sentence="currentSentence"
+      :native-lang="profile.activeProfile?.native_language"
+      :target-lang="profile.activeProfile?.target_language"
       @next="loadSentence"
     />
 
