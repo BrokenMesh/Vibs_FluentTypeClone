@@ -59,7 +59,7 @@
           <!-- Anki-style counters -->
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
-          <span class="text-xs text-zinc-600">skill {{ Math.round(profile.activeProfile.skill_score) }}/100</span>
+          <span class="text-xs text-zinc-600">{{ cefrLevel }} · {{ Math.round(profile.activeProfile.skill_score) }}/1000</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
         </div>
       </div>
@@ -163,6 +163,11 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+
+const CEFR = [
+  { label: 'A1', min: 0 }, { label: 'A2', min: 167 }, { label: 'B1', min: 334 },
+  { label: 'B2', min: 500 }, { label: 'C1', min: 666 }, { label: 'C2', min: 833 },
+];
 import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
@@ -200,6 +205,12 @@ const lastWpm = ref(0);
 const xpGained = ref(0);
 const newSkill = ref(0);
 const daysUntilReview = ref(1);
+
+const cefrLevel = computed(() => {
+  const s = profile.activeProfile?.skill_score ?? 0;
+  for (let i = CEFR.length - 1; i >= 0; i--) if (s >= CEFR[i].min) return CEFR[i].label;
+  return 'A1';
+});
 
 const targetWords = computed(() =>
   currentSentence.value ? currentSentence.value.target_text.split(/\s+/) : []

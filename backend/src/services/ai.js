@@ -7,21 +7,26 @@ function stripMarkdown(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
 
-const DIFFICULTY_LABELS = [
-  'absolute beginner',  // 0–20
-  'beginner',           // 20–40
-  'elementary',         // 40–60
-  'intermediate',       // 60–80
-  'upper-intermediate', // 80–100
+// CEFR levels mapped to skill score 0–1000
+const CEFR_LEVELS = [
+  { label: 'A1', min: 0,   max: 166  },
+  { label: 'A2', min: 167, max: 333  },
+  { label: 'B1', min: 334, max: 499  },
+  { label: 'B2', min: 500, max: 665  },
+  { label: 'C1', min: 666, max: 832  },
+  { label: 'C2', min: 833, max: 1000 },
 ];
 
-function difficultyLabel(skillScore) {
-  const idx = Math.min(4, Math.floor(skillScore / 20));
-  return DIFFICULTY_LABELS[idx];
+export function cefrLevel(skillScore) {
+  for (let i = CEFR_LEVELS.length - 1; i >= 0; i--) {
+    if (skillScore >= CEFR_LEVELS[i].min) return CEFR_LEVELS[i].label;
+  }
+  return 'A1';
 }
 
 function targetWordCount(skillScore) {
-  return 4 + Math.floor(skillScore / 10); // 4–14 words
+  // 4 words at A1, up to 14 at C2 (scales with 0–1000)
+  return 4 + Math.floor(skillScore / 100);
 }
 
 /**
@@ -33,10 +38,10 @@ export async function generateSentence({
   nativeLanguage,
   skillScore,
   knownWords = [],
-  anchorWord = null,         // word of the day — must appear in the sentence
-  existingSentences = [],    // target_text strings to avoid repeating
+  anchorWord = null,
+  existingSentences = [],
 }) {
-  const difficulty = difficultyLabel(skillScore);
+  const cefr = cefrLevel(skillScore);
   const wordCount = targetWordCount(skillScore);
   const knownList = knownWords.slice(0, 40).join(', ') || 'none yet';
   const avoidList = existingSentences.slice(0, 20).map(s => `- ${s}`).join('\n') || 'none';
@@ -46,21 +51,22 @@ export async function generateSentence({
     : '';
 
   const prompt = `You are a language learning assistant helping a user learn ${targetLanguage}.
-Native language: ${nativeLanguage}. Skill level: ${difficulty} (${skillScore}/100).
+Native language: ${nativeLanguage}. Skill level: ${cefr} (${skillScore}/1000).
 
-Generate ONE natural, meaningful sentence in ${targetLanguage} that:
+Generate ONE creative, natural sentence in ${targetLanguage} that:
 - Has approximately ${wordCount} words
-- Uses ${difficulty}-level vocabulary and grammar
-- Primarily uses these known words: ${knownList}
+- Matches ${cefr}-level vocabulary and grammar complexity
+- Is creative and varied — use interesting real-world scenarios, not generic phrases
+- MAY occasionally use one of these known words if it fits naturally: ${knownList}
+  (do NOT force them in or repeat the same ones every time — most sentences should feel fresh)
 ${anchorInstruction}
-- Sounds like natural, everyday speech
 - Is DIFFERENT from all of these already-used sentences:
 ${avoidList}
 
 Respond ONLY with valid JSON (no markdown):
 {"target_text": "...", "source_text": "...", "words": ["word1", "word2", ...]}
 
-Where source_text is a natural ${nativeLanguage} translation the user will read, and words is a lowercased array of ${targetLanguage} words without punctuation.`;
+Where source_text is a natural ${nativeLanguage} translation the user will read, and words is a lowercased array of the key ${targetLanguage} vocabulary words (no punctuation).`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -75,7 +81,6 @@ Where source_text is a natural ${nativeLanguage} translation the user will read,
     throw new Error('AI returned unexpected format');
   }
 
-  // Reject if it's a duplicate (case-insensitive exact match)
   const normalised = parsed.target_text.trim().toLowerCase();
   if (existingSentences.some(s => s.trim().toLowerCase() === normalised)) {
     throw new Error('DUPLICATE');
@@ -94,15 +99,15 @@ Where source_text is a natural ${nativeLanguage} translation the user will read,
  */
 export async function generateWordOfDay({ targetLanguage, nativeLanguage, skillScore, existingWords = [] }) {
   const existing = existingWords.slice(0, 80).join(', ') || 'none';
-  const difficulty = difficultyLabel(skillScore);
+  const cefr = cefrLevel(skillScore);
 
   const prompt = `You are a language learning assistant.
-The user is learning ${targetLanguage} (native: ${nativeLanguage}). Skill: ${difficulty}.
+The user is learning ${targetLanguage} (native: ${nativeLanguage}). Level: ${cefr} (${skillScore}/1000).
 Words they already know: ${existing}
 
 Pick ONE new ${targetLanguage} word that:
 - They don't already know
-- Is common and useful for ${difficulty} learners
+- Is common and useful for ${cefr}-level learners
 - Would work well as the focus of several practice sentences
 
 Respond ONLY with valid JSON (no markdown): {"word": "...", "translation": "..."}`;

@@ -67,7 +67,8 @@
     <!-- Skill progress + next review -->
     <div class="flex justify-center gap-6 text-sm text-zinc-500">
       <span v-if="mode === 'challenge'">
-        skill <span class="text-zinc-100">{{ Math.round(newSkill) }}/100</span>
+        <span class="text-brand-400 font-medium">{{ cefrLabel(newSkill) }}</span>
+        <span class="text-zinc-600 ml-1">{{ Math.round(newSkill) }}/1000</span>
       </span>
       <span>
         next review
@@ -96,6 +97,15 @@ defineProps({
   targetLang: String,
 });
 defineEmits(['next']);
+
+const CEFR = [
+  { label: 'A1', min: 0 }, { label: 'A2', min: 167 }, { label: 'B1', min: 334 },
+  { label: 'B2', min: 500 }, { label: 'C1', min: 666 }, { label: 'C2', min: 833 },
+];
+function cefrLabel(score) {
+  for (let i = CEFR.length - 1; i >= 0; i--) if (score >= CEFR[i].min) return CEFR[i].label;
+  return 'A1';
+}
 
 const LANG_CODES = {
   german: 'de-DE', french: 'fr-FR', spanish: 'es-ES', italian: 'it-IT',

@@ -15,7 +15,7 @@
         <div class="ml-3 flex items-center gap-2">
           <span v-if="profile.activeProfile" class="text-xs text-zinc-500">
             {{ profile.activeProfile.target_language }}
-            <span class="text-brand-500 ml-1">{{ Math.round(profile.activeProfile.skill_score) }}</span>
+            <span class="text-brand-500 ml-1">{{ cefrLevel }}</span>
           </span>
           <button @click="handleLogout" class="btn-ghost text-sm px-3 py-1.5 rounded text-zinc-500 hover:text-zinc-100">
             logout
@@ -27,7 +27,7 @@
       <div class="flex md:hidden items-center gap-3">
         <span v-if="profile.activeProfile" class="text-xs text-zinc-500">
           {{ profile.activeProfile.target_language }}
-          <span class="text-brand-500 ml-1">{{ Math.round(profile.activeProfile.skill_score) }}</span>
+          <span class="text-brand-500 ml-1">{{ cefrLevel }}</span>
         </span>
         <button
           @click="menuOpen = !menuOpen"
@@ -73,6 +73,16 @@ const router = useRouter();
 const adminEmail = import.meta.env.VITE_ADMIN_EMAIL || 'elkordhicham@gmail.com';
 const isAdmin = computed(() => auth.user?.email === adminEmail);
 const menuOpen = ref(false);
+
+const CEFR = [
+  { label: 'A1', min: 0 }, { label: 'A2', min: 167 }, { label: 'B1', min: 334 },
+  { label: 'B2', min: 500 }, { label: 'C1', min: 666 }, { label: 'C2', min: 833 },
+];
+const cefrLevel = computed(() => {
+  const s = profile.activeProfile?.skill_score ?? 0;
+  for (let i = CEFR.length - 1; i >= 0; i--) if (s >= CEFR[i].min) return CEFR[i].label;
+  return 'A1';
+});
 
 async function handleLogout() {
   menuOpen.value = false;

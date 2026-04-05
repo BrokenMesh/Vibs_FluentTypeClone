@@ -348,7 +348,7 @@ router.post('/:sentenceId/review', (req, res) => {
   let xpGained = 0;
   if (mode === 'challenge') {
     const delta = skillDelta(score, profile.skill_score);
-    newSkillScore = Math.max(0, Math.min(100, profile.skill_score + delta));
+    newSkillScore = Math.max(0, Math.min(1000, profile.skill_score + delta));
     xpGained = Math.round(score * sentence.word_count * 10);
     db.prepare(
       'UPDATE language_profiles SET skill_score = ?, xp = xp + ? WHERE id = ?'

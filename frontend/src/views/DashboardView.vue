@@ -17,21 +17,23 @@
               <span class="text-zinc-600 mx-2">→</span>
               <span class="text-brand-400">{{ profile.activeProfile.target_language }}</span>
             </h2>
-            <p class="text-xs text-zinc-600 mt-0.5">{{ skillLabel }}</p>
+            <p class="text-xs text-zinc-600 mt-0.5">
+              <span class="text-brand-400 font-medium">{{ cefrLevel }}</span> — {{ skillLabel }}
+            </p>
           </div>
           <RouterLink to="/profile/new" class="text-xs text-zinc-600 hover:text-zinc-400">+ new profile</RouterLink>
         </div>
 
-        <!-- Skill bar -->
+        <!-- Skill bar (0–1000) -->
         <div class="space-y-1">
           <div class="flex justify-between text-xs text-zinc-500">
-            <span>skill</span>
-            <span>{{ Math.round(profile.activeProfile.skill_score) }} / 100</span>
+            <span>{{ cefrLevel }}</span>
+            <span>{{ Math.round(profile.activeProfile.skill_score) }} / 1000</span>
           </div>
           <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div
               class="h-full bg-brand-500 rounded-full transition-all duration-700"
-              :style="{ width: profile.activeProfile.skill_score + '%' }"
+              :style="{ width: (profile.activeProfile.skill_score / 10) + '%' }"
             />
           </div>
         </div>
@@ -108,14 +110,24 @@ const loading = ref(false);
 const stats = ref({ vocabCount: 0, sentenceCount: 0, dueCount: 0, avgAccuracy: null });
 const queue = ref({ dailyWord: null, due: 0, totalToday: 0, dailyBatchSize: 10 });
 
-const skillLabel = computed(() => {
-  const s = profile.activeProfile?.skill_score ?? 0;
-  if (s < 20) return 'Absolute beginner';
-  if (s < 40) return 'Beginner';
-  if (s < 60) return 'Elementary';
-  if (s < 80) return 'Intermediate';
-  return 'Upper-intermediate';
-});
+const CEFR = [
+  { label: 'A1', min: 0,   name: 'Beginner' },
+  { label: 'A2', min: 167, name: 'Elementary' },
+  { label: 'B1', min: 334, name: 'Intermediate' },
+  { label: 'B2', min: 500, name: 'Upper-intermediate' },
+  { label: 'C1', min: 666, name: 'Advanced' },
+  { label: 'C2', min: 833, name: 'Proficient' },
+];
+
+function getCefr(score) {
+  for (let i = CEFR.length - 1; i >= 0; i--) {
+    if (score >= CEFR[i].min) return CEFR[i];
+  }
+  return CEFR[0];
+}
+
+const cefrLevel = computed(() => getCefr(profile.activeProfile?.skill_score ?? 0).label);
+const skillLabel = computed(() => getCefr(profile.activeProfile?.skill_score ?? 0).name);
 
 async function fetchStats() {
   if (!profile.activeProfile) return;
