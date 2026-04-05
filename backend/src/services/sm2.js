@@ -39,10 +39,10 @@ export function sm2Update({ easeFactor = 2.5, intervalDays = 1, score }) {
  * Positive on good accuracy, negative on poor accuracy.
  */
 export function skillDelta(score, currentSkill) {
-  // Skill score is 0–1000; deltas scaled accordingly
-  if (score >= 0.95) return Math.min(30, (1000 - currentSkill) * 0.05);
-  if (score >= 0.8)  return Math.min(15, (1000 - currentSkill) * 0.02);
+  // Skill score is 0–1000; deltas are 2× the original 0–100 scale values
+  if (score >= 0.95) return Math.min(6, (1000 - currentSkill) * 0.01);
+  if (score >= 0.8)  return Math.min(3, (1000 - currentSkill) * 0.004);
   if (score >= 0.6)  return 0;
-  if (score >= 0.4)  return -5;
-  return -10;
+  if (score >= 0.4)  return -1;
+  return -2;
 }
