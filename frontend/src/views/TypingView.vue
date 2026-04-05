@@ -54,12 +54,13 @@
             :class="['btn text-sm px-3 py-1', mode === 'practice' ? 'bg-zinc-700 text-zinc-100' : 'btn-ghost']"
           >practice</button>
         </div>
-        <div class="text-xs text-zinc-600 flex flex-wrap gap-2 items-center">
-          <span v-if="mode === 'challenge' && started">{{ elapsedSeconds }}s</span>
-          <span v-if="queue.due > 0" class="text-yellow-500">{{ queue.due }} due</span>
-          <span v-if="queue.newToday > 0">{{ queue.newToday }} new</span>
-          <span>skill {{ Math.round(profile.activeProfile.skill_score) }}/100</span>
-          <span v-if="isReview" class="text-yellow-400">↩ review</span>
+        <div class="flex flex-wrap gap-2 items-center">
+          <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
+          <!-- Anki-style counters -->
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+          <span class="text-xs text-zinc-600">skill {{ Math.round(profile.activeProfile.skill_score) }}/100</span>
+          <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
         </div>
       </div>
 

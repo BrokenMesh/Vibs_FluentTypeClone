@@ -49,9 +49,12 @@
           <p class="text-2xl font-semibold text-brand-400">{{ queue.dailyWord.word }}</p>
           <p class="text-zinc-500 text-sm mt-0.5">{{ queue.dailyWord.translation }}</p>
         </div>
-        <div class="text-right text-xs text-zinc-600 space-y-1">
-          <div>{{ queue.totalToday }}/{{ queue.dailyBatchSize }} sentences today</div>
-          <div v-if="queue.due > 0" class="text-yellow-500">{{ queue.due }} review{{ queue.due !== 1 ? 's' : '' }} due</div>
+        <div class="flex flex-col items-end gap-2">
+          <div class="text-xs text-zinc-600">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</div>
+          <div class="flex gap-1.5">
+            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
+            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+          </div>
         </div>
       </div>
 

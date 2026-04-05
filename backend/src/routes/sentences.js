@@ -314,14 +314,22 @@ router.post('/:sentenceId/review', (req, res) => {
     'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? ORDER BY reviewed_at DESC LIMIT 1'
   ).get(sentence.id, profile.id);
 
-  const prevEase = existingReview?.ease_factor ?? 2.5;
-  const prevInterval = existingReview?.interval_days ?? 1;
+  let easeFactor, intervalDays, nextReview;
 
-  const { easeFactor, intervalDays, nextReview } = sm2Update({
-    easeFactor: prevEase,
-    intervalDays: prevInterval,
-    score,
-  });
+  if (mode === 'practice') {
+    // Practice never advances the SM-2 schedule — sentence stays at its current due date
+    easeFactor = existingReview?.ease_factor ?? 2.5;
+    intervalDays = existingReview?.interval_days ?? 1;
+    nextReview = existingReview?.next_review ?? Math.floor(Date.now() / 1000); // stays due now if never reviewed
+  } else {
+    const prevEase = existingReview?.ease_factor ?? 2.5;
+    const prevInterval = existingReview?.interval_days ?? 1;
+    ({ easeFactor, intervalDays, nextReview } = sm2Update({
+      easeFactor: prevEase,
+      intervalDays: prevInterval,
+      score,
+    }));
+  }
 
   db.prepare(`
     INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review)
@@ -341,6 +349,22 @@ router.post('/:sentenceId/review', (req, res) => {
 
   const daysUntilReview = Math.round(intervalDays);
   res.json({ ok: true, nextReview, intervalDays, daysUntilReview, xpGained, newSkillScore });
+});
+
+/**
+ * DELETE /profiles/:profileId/sentences/:sentenceId/reviews
+ * Reset SM-2 data for a sentence — makes it due immediately again.
+ */
+router.delete('/:sentenceId/reviews', (req, res) => {
+  const profile = getProfile(req.params.profileId, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const db = getDb();
+  db.prepare(
+    'DELETE FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ?'
+  ).run(req.params.sentenceId, profile.id);
+
+  res.json({ ok: true });
 });
 
 export default router;
