@@ -64,7 +64,19 @@
 
       <!-- Source text (what user reads and translates) -->
       <div class="card">
-        <p class="text-xs text-zinc-600 mb-2 uppercase tracking-wider">{{ profile.activeProfile.native_language }} — translate this</p>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs text-zinc-600 uppercase tracking-wider">{{ profile.activeProfile.native_language }} — translate this</p>
+          <button
+            @click="speak"
+            title="Listen to pronunciation"
+            class="p-1.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+              <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          </button>
+        </div>
         <p class="text-zinc-200 text-lg leading-relaxed">{{ currentSentence.source_text }}</p>
       </div>
 
@@ -231,6 +243,11 @@ function handleInput() {
     started.value = true;
     if (mode.value === 'challenge') startTimer();
   }
+  // Mobile fallback: virtual keyboards don't reliably fire keydown for space
+  if (mode.value === 'practice' && userInput.value.endsWith(' ')) {
+    userInput.value = userInput.value.trimEnd();
+    submitPracticeWord();
+  }
 }
 
 function handleEnter() {
@@ -332,6 +349,28 @@ async function loadSentence() {
   } finally {
     loading.value = false;
   }
+}
+
+// TTS — map display language names to BCP-47 codes
+const LANG_CODES = {
+  german: 'de-DE', french: 'fr-FR', spanish: 'es-ES', italian: 'it-IT',
+  portuguese: 'pt-PT', dutch: 'nl-NL', russian: 'ru-RU', japanese: 'ja-JP',
+  chinese: 'zh-CN', korean: 'ko-KR', arabic: 'ar-SA', turkish: 'tr-TR',
+  polish: 'pl-PL', swedish: 'sv-SE', norwegian: 'nb-NO', danish: 'da-DK',
+  finnish: 'fi-FI', greek: 'el-GR', czech: 'cs-CZ', hungarian: 'hu-HU',
+  english: 'en-US',
+};
+
+function langCode(name) {
+  return LANG_CODES[name?.toLowerCase()] ?? name;
+}
+
+function speak() {
+  if (!window.speechSynthesis || !currentSentence.value) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(currentSentence.value.source_text);
+  utt.lang = langCode(profile.activeProfile?.native_language);
+  window.speechSynthesis.speak(utt);
 }
 
 watch(() => profile.activeProfile?.id, (id) => { if (id) loadSentence(); }, { immediate: true });
