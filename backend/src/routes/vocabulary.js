@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { getDb, rowid } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
-import { sm2Update } from '../services/sm2.js';
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -61,38 +60,6 @@ router.delete('/:wordId', (req, res) => {
   if (!word) return res.status(404).json({ error: 'Word not found' });
 
   db.prepare('DELETE FROM vocabulary WHERE id = ?').run(req.params.wordId);
-  res.json({ ok: true });
-});
-
-// PATCH /profiles/:profileId/vocabulary/:wordId/review — update SM-2 after review
-router.patch('/:wordId/review', (req, res) => {
-  const profile = getProfile(req.params.profileId, req.userId);
-  if (!profile) return res.status(404).json({ error: 'Profile not found' });
-
-  const db = getDb();
-  const word = db.prepare(
-    'SELECT * FROM vocabulary WHERE id = ? AND profile_id = ?'
-  ).get(req.params.wordId, profile.id);
-  if (!word) return res.status(404).json({ error: 'Word not found' });
-
-  const { correct } = req.body; // boolean
-  const score = correct ? 1.0 : 0.0;
-  const { easeFactor, intervalDays, nextReview } = sm2Update({
-    easeFactor: word.ease_factor,
-    intervalDays: word.interval_days,
-    score,
-  });
-
-  db.prepare(`
-    UPDATE vocabulary SET
-      times_seen = times_seen + 1,
-      times_correct = times_correct + ?,
-      ease_factor = ?,
-      interval_days = ?,
-      next_review = ?
-    WHERE id = ?
-  `).run(correct ? 1 : 0, easeFactor, intervalDays, nextReview, word.id);
-
   res.json({ ok: true });
 });
 

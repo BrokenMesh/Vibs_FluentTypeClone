@@ -13,7 +13,7 @@
     <template v-else>
       <!-- Add form -->
       <div v-if="showAdd" class="card space-y-3">
-        <p class="text-sm text-zinc-400">Add a word in <span class="text-brand-400">{{ profile.activeProfile.target_language }}</span> that you've learned</p>
+        <p class="text-sm text-zinc-400">Add a word in <span class="text-brand-400">{{ profile.activeProfile.target_language }}</span></p>
         <div class="flex flex-col sm:flex-row gap-2">
           <input v-model="newWord" class="input flex-1" :placeholder="`Word in ${profile.activeProfile.target_language}`" />
           <input v-model="newTranslation" class="input flex-1" :placeholder="`Translation in ${profile.activeProfile.native_language}`" />
@@ -24,16 +24,8 @@
         <p v-if="addError" class="text-red-400 text-sm">{{ addError }}</p>
       </div>
 
-      <!-- Filter / search -->
-      <div class="flex flex-wrap gap-2 items-center">
-        <input v-model="search" class="input flex-1 min-w-0" placeholder="search…" />
-        <select v-model="sortBy" class="input w-auto">
-          <option value="created_at">recent</option>
-          <option value="times_seen">most seen</option>
-          <option value="accuracy">accuracy</option>
-          <option value="next_review">due</option>
-        </select>
-      </div>
+      <!-- Search -->
+      <input v-model="search" class="input" placeholder="search words…" />
 
       <!-- Loading -->
       <div v-if="loading" class="text-zinc-500 animate-pulse">loading vocabulary…</div>
@@ -44,33 +36,74 @@
       </div>
 
       <!-- Word list -->
-      <div v-else class="space-y-2">
-        <div
-          v-for="word in filtered"
-          :key="word.id"
-          class="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 hover:border-zinc-700 transition-colors"
-        >
-          <div class="flex items-center gap-4 min-w-0">
-            <div>
+      <div v-else class="space-y-1">
+        <div v-for="word in filtered" :key="word.id" class="rounded-lg border border-zinc-800 overflow-hidden">
+          <!-- Word row -->
+          <div
+            class="flex items-center justify-between px-4 py-3 bg-zinc-900 hover:bg-zinc-800/60 transition-colors cursor-pointer select-none"
+            @click="toggleExpand(word)"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <svg
+                :class="['h-3.5 w-3.5 shrink-0 text-zinc-600 transition-transform', expanded === word.id ? 'rotate-90' : '']"
+                xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+              >
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/>
+              </svg>
               <span class="text-zinc-100 font-medium">{{ word.word }}</span>
-              <span class="text-zinc-500 text-sm ml-2">{{ word.translation }}</span>
+              <span class="text-zinc-500 text-sm truncate">{{ word.translation }}</span>
             </div>
+            <button
+              @click.stop="deleteWord(word.id)"
+              class="text-zinc-700 hover:text-red-400 transition-colors p-1"
+            >✕</button>
           </div>
-          <div class="flex items-center gap-4 text-xs text-zinc-600 shrink-0">
-            <span title="accuracy">
-              {{ word.times_seen > 0 ? Math.round(word.times_correct / word.times_seen * 100) : '—' }}%
-            </span>
-            <span title="times seen">× {{ word.times_seen }}</span>
-            <span
-              :class="isDue(word) ? 'text-yellow-500' : 'text-zinc-700'"
-              title="next review"
-            >
-              {{ dueLabel(word) }}
-            </span>
-            <span class="text-xs px-1.5 py-0.5 rounded" :class="word.source === 'manual' ? 'bg-zinc-800 text-zinc-400' : 'text-zinc-700'">
-              {{ word.source }}
-            </span>
-            <button @click="deleteWord(word.id)" class="text-zinc-700 hover:text-red-400 transition-colors">✕</button>
+
+          <!-- Expanded: sentences -->
+          <div v-if="expanded === word.id" class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-3">
+            <div v-if="sentencesLoading" class="text-zinc-600 text-sm animate-pulse">loading sentences…</div>
+            <div v-else-if="wordSentences.length === 0" class="text-zinc-700 text-sm">
+              No sentences found containing "{{ word.word }}".
+            </div>
+            <div v-else class="space-y-2">
+              <div
+                v-for="s in wordSentences"
+                :key="s.id"
+                class="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="min-w-0 space-y-0.5">
+                    <p class="text-zinc-500 text-sm">{{ s.source_text }}</p>
+                    <p class="text-zinc-100 text-sm">{{ s.target_text }}</p>
+                  </div>
+                  <div class="shrink-0 text-right space-y-1">
+                    <div v-if="s.last_score !== null">
+                      <span :class="['text-sm font-medium', s.last_score >= 0.8 ? 'text-brand-400' : s.last_score >= 0.5 ? 'text-yellow-400' : 'text-red-400']">
+                        {{ Math.round(s.last_score * 100) }}%
+                      </span>
+                    </div>
+                    <div v-if="s.last_wpm > 0" class="text-xs text-zinc-600">{{ s.last_wpm }} wpm</div>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center gap-3 text-xs">
+                    <span v-if="s.next_review" :class="isDue(s.next_review) ? 'text-yellow-400' : 'text-zinc-600'">
+                      {{ dueLabel(s.next_review) }}
+                    </span>
+                    <span v-else-if="s.last_reviewed === null" class="text-blue-400">new</span>
+                    <span v-if="s.last_mode" class="text-zinc-700">{{ s.last_mode }}</span>
+                  </div>
+                  <button
+                    v-if="s.last_reviewed !== null"
+                    @click="resetSentence(s)"
+                    :disabled="resetting === s.id"
+                    class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700 transition-colors disabled:opacity-40"
+                  >
+                    {{ resetting === s.id ? '…' : 'reset' }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -95,38 +128,69 @@ const newTranslation = ref('');
 const addLoading = ref(false);
 const addError = ref('');
 const search = ref('');
-const sortBy = ref('created_at');
 
-const now = Math.floor(Date.now() / 1000);
+const expanded = ref(null);
+const wordSentences = ref([]);
+const sentencesLoading = ref(false);
+const resetting = ref(null);
 
-function isDue(word) {
-  return word.next_review <= now && word.times_seen > 0;
+const now = () => Math.floor(Date.now() / 1000);
+
+function isDue(nextReview) {
+  return nextReview <= now();
 }
 
-function dueLabel(word) {
-  if (word.times_seen === 0) return 'new';
-  if (isDue(word)) return 'due';
-  const days = Math.ceil((word.next_review - now) / 86400);
-  return `in ${days}d`;
+function dueLabel(nextReview) {
+  const diff = nextReview - now();
+  if (diff <= 0) return 'due now';
+  const days = Math.round(diff / 86400);
+  if (days === 0) return 'due today';
+  if (days === 1) return 'due tomorrow';
+  return `due in ${days}d`;
 }
 
 const filtered = computed(() => {
-  let list = vocabulary.value;
-  if (search.value.trim()) {
-    const q = search.value.toLowerCase();
-    list = list.filter(w => w.word.includes(q) || w.translation.toLowerCase().includes(q));
-  }
-  return [...list].sort((a, b) => {
-    if (sortBy.value === 'times_seen') return b.times_seen - a.times_seen;
-    if (sortBy.value === 'accuracy') {
-      const accA = a.times_seen ? a.times_correct / a.times_seen : 0;
-      const accB = b.times_seen ? b.times_correct / b.times_seen : 0;
-      return accB - accA;
-    }
-    if (sortBy.value === 'next_review') return a.next_review - b.next_review;
-    return b.id - a.id;
-  });
+  if (!search.value.trim()) return vocabulary.value;
+  const q = search.value.toLowerCase();
+  return vocabulary.value.filter(w => w.word.includes(q) || w.translation.toLowerCase().includes(q));
 });
+
+async function toggleExpand(word) {
+  if (expanded.value === word.id) {
+    expanded.value = null;
+    wordSentences.value = [];
+    return;
+  }
+  expanded.value = word.id;
+  wordSentences.value = [];
+  sentencesLoading.value = true;
+  try {
+    const res = await api.get(`/profiles/${profile.activeProfile.id}/sentences`, {
+      params: { contains: word.word },
+    });
+    wordSentences.value = res.data;
+  } catch (e) {
+    console.error('Failed to load sentences', e);
+  } finally {
+    sentencesLoading.value = false;
+  }
+}
+
+async function resetSentence(s) {
+  resetting.value = s.id;
+  try {
+    await api.delete(`/profiles/${profile.activeProfile.id}/sentences/${s.id}/reviews`);
+    s.last_reviewed = null;
+    s.last_score = null;
+    s.last_wpm = null;
+    s.last_mode = null;
+    s.next_review = null;
+  } catch (e) {
+    console.error('Reset failed', e);
+  } finally {
+    resetting.value = null;
+  }
+}
 
 async function fetchVocabulary() {
   if (!profile.activeProfile) return;
@@ -134,8 +198,6 @@ async function fetchVocabulary() {
   try {
     const res = await api.get(`/profiles/${profile.activeProfile.id}/vocabulary`);
     vocabulary.value = res.data;
-  } catch (e) {
-    console.error(e);
   } finally {
     loading.value = false;
   }
@@ -165,6 +227,7 @@ async function addWord() {
 }
 
 async function deleteWord(id) {
+  if (expanded.value === id) { expanded.value = null; wordSentences.value = []; }
   try {
     await api.delete(`/profiles/${profile.activeProfile.id}/vocabulary/${id}`);
     vocabulary.value = vocabulary.value.filter(w => w.id !== id);

@@ -276,6 +276,14 @@ router.get('/', (req, res) => {
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
   const db = getDb();
+  const containsFilter = req.query.contains
+    ? `AND (s.target_text LIKE ? OR s.source_text LIKE ?)`
+    : '';
+  const likeParam = req.query.contains ? `%${req.query.contains}%` : null;
+  const params = likeParam
+    ? [profile.id, likeParam, likeParam]
+    : [profile.id];
+
   const sentences = db.prepare(`
     SELECT s.*,
       sr.score as last_score, sr.wpm as last_wpm, sr.reviewed_at as last_reviewed, sr.mode as last_mode,
@@ -284,10 +292,10 @@ router.get('/', (req, res) => {
     LEFT JOIN sentence_reviews sr ON sr.id = (
       SELECT id FROM sentence_reviews WHERE sentence_id = s.id ORDER BY reviewed_at DESC LIMIT 1
     )
-    WHERE s.profile_id = ?
+    WHERE s.profile_id = ? ${containsFilter}
     ORDER BY s.created_at DESC
     LIMIT 100
-  `).all(profile.id);
+  `).all(...params);
   res.json(sentences);
 });
 
