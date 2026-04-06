@@ -1,5 +1,5 @@
 <template>
-  <div class="card text-center space-y-6 py-10">
+  <div class="card text-center space-y-6 py-8">
     <!-- Score ring -->
     <div class="flex justify-center">
       <div class="relative w-28 h-28">
@@ -38,6 +38,7 @@
 
     <!-- Sentence reveal -->
     <div class="text-left bg-zinc-800/50 rounded-lg p-4 space-y-3">
+      <!-- Original -->
       <div class="space-y-1">
         <div class="flex items-center justify-between">
           <p class="text-xs text-zinc-600">original</p>
@@ -50,9 +51,11 @@
         </div>
         <p class="text-zinc-400 text-sm">{{ sentence.source_text }}</p>
       </div>
+
+      <!-- Correct translation — words are clickable -->
       <div class="space-y-1">
         <div class="flex items-center justify-between">
-          <p class="text-xs text-zinc-600">correct translation</p>
+          <p class="text-xs text-zinc-600">correct translation <span class="text-zinc-700">(tap word to add)</span></p>
           <button @click="speak(sentence.target_text, targetLang)" title="Listen" class="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
@@ -60,11 +63,48 @@
             </svg>
           </button>
         </div>
-        <p class="text-zinc-200">{{ sentence.target_text }}</p>
+        <p class="text-zinc-200 leading-relaxed">
+          <span
+            v-for="(token, i) in targetTokens"
+            :key="i"
+            @click="token.word ? openPopup(token.word, token.raw) : null"
+            :class="[
+              token.word ? 'cursor-pointer rounded px-0.5 hover:bg-zinc-700 transition-colors' : '',
+              addedWords.has(token.word) ? 'text-brand-400' : '',
+            ]"
+          >{{ token.raw }}</span>
+        </p>
+      </div>
+
+      <!-- What the user typed — error diff -->
+      <div v-if="mode === 'challenge' && userTyped" class="space-y-1 pt-1 border-t border-zinc-700">
+        <p class="text-xs text-zinc-600">your attempt</p>
+        <p class="font-mono text-sm leading-relaxed break-all">
+          <span
+            v-for="(ch, i) in typedDiff"
+            :key="i"
+            :class="ch.ok ? 'text-zinc-400' : 'text-red-400'"
+          >{{ ch.c }}</span><span
+            v-for="(ch, i) in missingDiff"
+            :key="'m'+i"
+            class="text-red-800"
+          >{{ ch }}</span>
+        </p>
+      </div>
+
+      <!-- Practice word-by-word breakdown -->
+      <div v-if="mode === 'practice' && typedWords?.length" class="space-y-1 pt-1 border-t border-zinc-700">
+        <p class="text-xs text-zinc-600">your attempt</p>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <span v-for="(word, i) in targetWordsArr" :key="i">
+            <span :class="wordResultsArr[i] ? 'text-brand-400' : 'text-red-400'">{{ typedWords[i] || '—' }}</span>
+            <span v-if="!wordResultsArr[i]" class="text-zinc-600 ml-1">→ {{ word }}</span>
+          </span>
+        </div>
       </div>
     </div>
 
-    <!-- Skill progress + next review -->
+    <!-- Skill + next review -->
     <div class="flex justify-center gap-6 text-sm text-zinc-500">
       <span v-if="mode === 'challenge'">
         <span class="text-brand-400 font-medium">{{ cefrLabel(newSkill) }}</span>
@@ -72,20 +112,53 @@
       </span>
       <span>
         next review
-        <span class="text-zinc-300">
-          {{ daysUntilReview <= 1 ? 'tomorrow' : `in ${daysUntilReview} days` }}
-        </span>
+        <span class="text-zinc-300">{{ daysUntilReview <= 1 ? 'tomorrow' : `in ${daysUntilReview} days` }}</span>
       </span>
     </div>
 
-    <button @click="$emit('next')" class="btn-primary px-8">
-      next sentence →
-    </button>
+    <button @click="$emit('next')" class="btn-primary px-8">next sentence →</button>
+  </div>
+
+  <!-- Word popup -->
+  <div
+    v-if="popup.word"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
+    @click.self="popup.word = null"
+  >
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm mx-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-xl text-zinc-100">{{ popup.raw }}</h3>
+        <button @click="popup.word = null" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">✕</button>
+      </div>
+
+      <input
+        v-model="popup.translation"
+        class="input"
+        :placeholder="`Translation in ${nativeLang}…`"
+        @keydown.enter="addToVocab"
+      />
+
+      <div class="flex flex-col gap-2">
+        <button
+          @click="addToVocab"
+          :disabled="addingWord || !popup.translation.trim() || addedWords.has(popup.word)"
+          class="btn-primary w-full disabled:opacity-50"
+        >
+          {{ addingWord ? '…' : addedWords.has(popup.word) ? '✓ Added' : 'Add to vocabulary' }}
+        </button>
+        <button @click="askClaude" class="btn-ghost w-full text-sm">
+          Ask Claude about "{{ popup.raw }}"
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
+import { ref, computed } from 'vue';
+import api from '../api/index.js';
+
+const props = defineProps({
   score: Number,
   wpm: Number,
   mode: String,
@@ -95,9 +168,15 @@ defineProps({
   sentence: Object,
   nativeLang: String,
   targetLang: String,
+  profileId: [Number, String],
+  userTyped: String,
+  typedWords: Array,
+  targetWordsArr: Array,
+  wordResultsArr: Array,
 });
 defineEmits(['next']);
 
+// CEFR
 const CEFR = [
   { label: 'A1', min: 0 }, { label: 'A2', min: 167 }, { label: 'B1', min: 334 },
   { label: 'B2', min: 500 }, { label: 'C1', min: 666 }, { label: 'C2', min: 833 },
@@ -107,6 +186,7 @@ function cefrLabel(score) {
   return 'A1';
 }
 
+// TTS
 const LANG_CODES = {
   german: 'de-DE', french: 'fr-FR', spanish: 'es-ES', italian: 'it-IT',
   portuguese: 'pt-PT', dutch: 'nl-NL', russian: 'ru-RU', japanese: 'ja-JP',
@@ -115,12 +195,77 @@ const LANG_CODES = {
   finnish: 'fi-FI', greek: 'el-GR', czech: 'cs-CZ', hungarian: 'hu-HU',
   english: 'en-US',
 };
-
 function speak(text, lang) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(text);
   utt.lang = LANG_CODES[lang?.toLowerCase()] ?? lang;
   window.speechSynthesis.speak(utt);
+}
+
+// Error diff for challenge mode
+const typedDiff = computed(() => {
+  if (!props.userTyped || !props.sentence) return [];
+  return [...props.userTyped].map((c, i) => ({
+    c,
+    ok: props.sentence.target_text[i] === c,
+  }));
+});
+const missingDiff = computed(() => {
+  if (!props.userTyped || !props.sentence) return [];
+  const t = props.sentence.target_text;
+  const u = props.userTyped;
+  return u.length < t.length ? [...t.slice(u.length)] : [];
+});
+
+// Tokenise target text into clickable word spans + punctuation
+const targetTokens = computed(() => {
+  if (!props.sentence?.target_text) return [];
+  const tokens = [];
+  const regex = /([A-Za-zÀ-ÖØ-öø-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]+)|([^A-Za-zÀ-ÖØ-öø-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]+)/g;
+  let m;
+  while ((m = regex.exec(props.sentence.target_text)) !== null) {
+    if (m[1]) tokens.push({ raw: m[0], word: m[1].toLowerCase() });
+    else tokens.push({ raw: m[0], word: null });
+  }
+  return tokens;
+});
+
+// Word popup
+const popup = ref({ word: null, raw: '', translation: '' });
+const addingWord = ref(false);
+const addedWords = ref(new Set());
+
+function openPopup(word, raw) {
+  popup.value = { word, raw, translation: '' };
+}
+
+async function addToVocab() {
+  if (!props.profileId || !popup.value.translation.trim() || addedWords.value.has(popup.value.word)) return;
+  addingWord.value = true;
+  try {
+    await api.post(`/profiles/${props.profileId}/vocabulary`, {
+      word: popup.value.word,
+      translation: popup.value.translation.trim(),
+    });
+    addedWords.value = new Set([...addedWords.value, popup.value.word]);
+    popup.value.word = null;
+  } catch (e) {
+    // word might already exist — still close
+    addedWords.value = new Set([...addedWords.value, popup.value.word]);
+    popup.value.word = null;
+  } finally {
+    addingWord.value = false;
+  }
+}
+
+async function askClaude() {
+  const text = `What does the word "${popup.value.raw}" mean in ${props.targetLang}?\n\nPlease explain:\n- Its meaning and common usage\n- How it's built (roots, prefixes, suffixes)\n- Conjugations or declensions if applicable\n- A few example sentences`;
+  if (navigator.share) {
+    try { await navigator.share({ text }); } catch { /* cancelled */ }
+  } else if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    alert('Prompt copied to clipboard');
+  }
 }
 </script>

@@ -63,7 +63,20 @@ async function ensureDailyWord(db, profile) {
     ).run(profile.id, wordData.word.toLowerCase().trim(), wordData.translation);
   }
 
-  return db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
+  const newDailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
+
+  // Generate sentences for the new word immediately (background, non-blocking)
+  const existingTexts = db.prepare(
+    'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
+  ).all(profile.id).map(r => r.target_text);
+  Promise.allSettled(
+    Array.from({ length: DAILY_BATCH_SIZE }, () => generateAndSave(db, profile, newDailyWord, existingTexts, date))
+  ).then(results => {
+    const ok = results.filter(r => r.status === 'fulfilled' && r.value).length;
+    console.log(`Generated ${ok}/${DAILY_BATCH_SIZE} sentences for word of day "${newDailyWord.word}"`);
+  }).catch(e => console.error('WotD sentence gen failed:', e));
+
+  return newDailyWord;
 }
 
 /**
@@ -163,40 +176,30 @@ router.get('/next', async (req, res) => {
     return res.json({ sentence: due, isReview: true, dailyWord });
   }
 
-  // 2. New sentence from today's batch (never reviewed)
-  const newFromToday = db.prepare(`
+  // 2. Any unreviewed sentence (any batch date — yesterday's carry over too)
+  const newAny = db.prepare(`
     SELECT s.* FROM sentences s
-    WHERE s.profile_id = ? AND s.batch_date = ?
+    WHERE s.profile_id = ?
       AND NOT EXISTS (
         SELECT 1 FROM sentence_reviews sr WHERE sr.sentence_id = s.id AND sr.profile_id = ?
       )
-    ORDER BY s.id ASC
+    ORDER BY s.batch_date DESC, s.id ASC
     LIMIT 1
-  `).get(profile.id, date, profile.id);
+  `).get(profile.id, profile.id);
 
-  if (newFromToday) {
+  if (newAny) {
     const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
-    return res.json({ sentence: newFromToday, isReview: false, dailyWord });
+    return res.json({ sentence: newAny, isReview: false, dailyWord });
   }
 
-  // 3. Today's batch is incomplete — generate more
+  // 3. No unreviewed left — generate today's batch if incomplete
   const todayCount = db.prepare(
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
 
   if (todayCount >= DAILY_BATCH_SIZE) {
-    // All of today's batch done and nothing due — come back tomorrow
-    const dueCount = db.prepare(`
-      SELECT COUNT(*) as n FROM sentences s
-      JOIN (
-        SELECT sentence_id, MAX(reviewed_at) as last_rev, next_review
-        FROM sentence_reviews WHERE profile_id = ?
-        GROUP BY sentence_id
-      ) sr ON sr.sentence_id = s.id
-      WHERE s.profile_id = ? AND sr.next_review > ?
-    `).get(profile.id, profile.id, now).n;
-
-    return res.json({ done: true, dueCount, nextBatchDate: date });
+    // Batch full and nothing left — done for today
+    return res.json({ done: true, nextBatchDate: date });
   }
 
   // Generate sentences to fill today's batch — all in parallel
@@ -256,9 +259,9 @@ router.get('/queue', async (req, res) => {
 
   const newToday = db.prepare(`
     SELECT COUNT(*) as n FROM sentences s
-    WHERE s.profile_id = ? AND s.batch_date = ?
+    WHERE s.profile_id = ?
       AND NOT EXISTS (SELECT 1 FROM sentence_reviews sr WHERE sr.sentence_id = s.id AND sr.profile_id = ?)
-  `).get(profile.id, date, profile.id).n;
+  `).get(profile.id, profile.id).n;
 
   const totalToday = db.prepare(
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
@@ -357,6 +360,37 @@ router.post('/:sentenceId/review', (req, res) => {
 
   const daysUntilReview = Math.round(intervalDays);
   res.json({ ok: true, nextReview, intervalDays, daysUntilReview, xpGained, newSkillScore });
+});
+
+/**
+ * POST /profiles/:profileId/sentences/:sentenceId/delay
+ * Push the sentence to tomorrow without affecting SM-2 ease/interval.
+ */
+router.post('/:sentenceId/delay', (req, res) => {
+  const profile = getProfile(req.params.profileId, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const db = getDb();
+  const sentence = db.prepare(
+    'SELECT * FROM sentences WHERE id = ? AND profile_id = ?'
+  ).get(req.params.sentenceId, profile.id);
+  if (!sentence) return res.status(404).json({ error: 'Sentence not found' });
+
+  const tomorrow = Math.floor(Date.now() / 1000) + 86400;
+  const existing = db.prepare(
+    'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? ORDER BY reviewed_at DESC LIMIT 1'
+  ).get(sentence.id, profile.id);
+
+  db.prepare(`
+    INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review)
+    VALUES (?, ?, 'delay', 0, 0, ?, ?, ?)
+  `).run(sentence.id, profile.id,
+    existing?.ease_factor ?? 2.5,
+    existing?.interval_days ?? 1,
+    tomorrow
+  );
+
+  res.json({ ok: true });
 });
 
 /**

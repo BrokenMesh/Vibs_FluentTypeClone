@@ -37,6 +37,11 @@
       :sentence="currentSentence"
       :native-lang="profile.activeProfile?.native_language"
       :target-lang="profile.activeProfile?.target_language"
+      :profile-id="profile.activeProfile?.id"
+      :user-typed="userTyped"
+      :typed-words="typedWords"
+      :target-words-arr="targetWords"
+      :word-results-arr="wordResults"
       @next="loadSentence"
     />
 
@@ -56,11 +61,11 @@
         </div>
         <div class="flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
-          <!-- Anki-style counters -->
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
           <span class="text-xs text-zinc-600">{{ cefrLevel }} · {{ Math.round(profile.activeProfile.skill_score) }}/1000</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
+          <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
         </div>
       </div>
 
@@ -198,6 +203,10 @@ let timerInterval = null;
 // Practice mode tracking
 const practiceWordIndex = ref(0);
 const wordResults = ref([]);
+const typedWords = ref([]);   // what user actually typed per word
+
+// Challenge mode — store raw typed string for results diff
+const userTyped = ref('');
 
 // Results
 const lastScore = ref(0);
@@ -233,6 +242,8 @@ function setMode(m) {
 
 function resetState() {
   userInput.value = '';
+  userTyped.value = '';
+  typedWords.value = [];
   started.value = false;
   finished.value = false;
   practiceWordIndex.value = 0;
@@ -282,9 +293,12 @@ function submitChallenge() {
   const typed = userInput.value;
   const target = currentSentence.value.target_text;
   clearInterval(timerInterval);
+  userTyped.value = typed;
 
-  const correctChars = [...typed].filter((c, i) => c === target[i]).length;
-  const score = target.length > 0 ? correctChars / target.length : 0;
+  // 10 mistakes = 0%, 0 mistakes = 100%
+  const mistakes = [...target].filter((c, i) => typed[i] !== c).length;
+  const score = Math.max(0, 1 - mistakes / 10);
+
   const elapsed = (Date.now() - (startTime.value || Date.now())) / 1000 / 60;
   const wpm = elapsed > 0 ? Math.round(typed.split(/\s+/).length / elapsed) : 0;
 
@@ -298,12 +312,14 @@ function submitPracticeWord() {
   const correct = typed.toLowerCase() === currentWord.toLowerCase();
 
   wordResults.value.push(correct);
+  typedWords.value.push(typed);
   userInput.value = '';
   hintVisible.value = false;
   practiceWordIndex.value++;
 
   if (practiceWordIndex.value >= targetWords.value.length) {
-    const score = wordResults.value.filter(Boolean).length / wordResults.value.length;
+    const mistakes = wordResults.value.filter(r => !r).length;
+    const score = Math.max(0, 1 - mistakes / 10);
     finished.value = true;
     submitReview(score, 0);
   }
@@ -385,6 +401,16 @@ function speak() {
   const utt = new SpeechSynthesisUtterance(currentSentence.value.source_text);
   utt.lang = langCode(profile.activeProfile?.native_language);
   window.speechSynthesis.speak(utt);
+}
+
+async function delayCard() {
+  if (!currentSentence.value) return;
+  try {
+    await api.post(`/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/delay`);
+  } catch (e) {
+    console.error('Delay failed', e);
+  }
+  loadSentence();
 }
 
 watch(() => profile.activeProfile?.id, (id) => { if (id) loadSentence(); }, { immediate: true });
