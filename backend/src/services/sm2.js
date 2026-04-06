@@ -39,10 +39,11 @@ export function sm2Update({ easeFactor = 2.5, intervalDays = 1, score }) {
  * Positive on good accuracy, negative on poor accuracy.
  */
 export function skillDelta(score, currentSkill) {
-  // Skill score is 0–1000; deltas are 2× the original 0–100 scale values
-  if (score >= 0.95) return Math.min(6, (1000 - currentSkill) * 0.01);
-  if (score >= 0.8)  return Math.min(3, (1000 - currentSkill) * 0.004);
+  // Skill score 0–1000. Each CEFR level is ~167 pts wide.
+  // Max +2 per perfect session → ~84 sessions to advance one level.
+  if (score >= 0.95) return Math.min(2,   (1000 - currentSkill) * 0.003);
+  if (score >= 0.8)  return Math.min(1,   (1000 - currentSkill) * 0.0015);
   if (score >= 0.6)  return 0;
-  if (score >= 0.4)  return -1;
-  return -2;
+  if (score >= 0.4)  return -0.5;
+  return -1;
 }

@@ -24,16 +24,16 @@
           <RouterLink to="/profile/new" class="text-xs text-zinc-600 hover:text-zinc-400">+ new profile</RouterLink>
         </div>
 
-        <!-- Skill bar (0–1000) -->
+        <!-- Skill bar — progress within current CEFR level -->
         <div class="space-y-1">
           <div class="flex justify-between text-xs text-zinc-500">
             <span>{{ cefrLevel }}</span>
-            <span>{{ Math.round(profile.activeProfile.skill_score) }} / 1000</span>
+            <span class="text-zinc-600">{{ nextLabel }}</span>
           </div>
           <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div
               class="h-full bg-brand-500 rounded-full transition-all duration-700"
-              :style="{ width: (profile.activeProfile.skill_score / 10) + '%' }"
+              :style="{ width: barWidth + '%' }"
             />
           </div>
         </div>
@@ -104,30 +104,22 @@ import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
 import StatCard from '../components/StatCard.vue';
+import { cefrOf, cefrNext, ptsToNext, levelProgress } from '../utils/cefr.js';
 
 const profile = useProfileStore();
 const loading = ref(false);
 const stats = ref({ vocabCount: 0, sentenceCount: 0, dueCount: 0, avgAccuracy: null });
 const queue = ref({ dailyWord: null, due: 0, totalToday: 0, dailyBatchSize: 10 });
 
-const CEFR = [
-  { label: 'A1', min: 0,   name: 'Beginner' },
-  { label: 'A2', min: 167, name: 'Elementary' },
-  { label: 'B1', min: 334, name: 'Intermediate' },
-  { label: 'B2', min: 500, name: 'Upper-intermediate' },
-  { label: 'C1', min: 666, name: 'Advanced' },
-  { label: 'C2', min: 833, name: 'Proficient' },
-];
-
-function getCefr(score) {
-  for (let i = CEFR.length - 1; i >= 0; i--) {
-    if (score >= CEFR[i].min) return CEFR[i];
-  }
-  return CEFR[0];
-}
-
-const cefrLevel = computed(() => getCefr(profile.activeProfile?.skill_score ?? 0).label);
-const skillLabel = computed(() => getCefr(profile.activeProfile?.skill_score ?? 0).name);
+const score = computed(() => profile.activeProfile?.skill_score ?? 0);
+const cefrLevel = computed(() => cefrOf(score.value).label);
+const skillLabel = computed(() => cefrOf(score.value).name);
+const barWidth = computed(() => levelProgress(score.value) / 10); // 0–100 for CSS %
+const nextLabel = computed(() => {
+  const pts = ptsToNext(score.value);
+  const next = cefrNext(score.value);
+  return pts !== null ? `${Math.ceil(pts)} pts to ${next.label}` : 'C2 — mastered';
+});
 
 async function fetchStats() {
   if (!profile.activeProfile) return;

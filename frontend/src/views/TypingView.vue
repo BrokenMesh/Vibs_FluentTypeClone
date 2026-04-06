@@ -63,7 +63,7 @@
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
-          <span class="text-xs text-zinc-600">{{ cefrLevel }} · {{ Math.round(profile.activeProfile.skill_score) }}/1000</span>
+          <span class="text-xs text-zinc-600">{{ skillDisplay }}</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
           <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
         </div>
@@ -169,10 +169,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 
-const CEFR = [
-  { label: 'A1', min: 0 }, { label: 'A2', min: 167 }, { label: 'B1', min: 334 },
-  { label: 'B2', min: 500 }, { label: 'C1', min: 666 }, { label: 'C2', min: 833 },
-];
+import { cefrOf, cefrNext, ptsToNext } from '../utils/cefr.js';
 import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
@@ -215,10 +212,12 @@ const xpGained = ref(0);
 const newSkill = ref(0);
 const daysUntilReview = ref(1);
 
-const cefrLevel = computed(() => {
+const cefrLevel = computed(() => cefrOf(profile.activeProfile?.skill_score ?? 0).label);
+const skillDisplay = computed(() => {
   const s = profile.activeProfile?.skill_score ?? 0;
-  for (let i = CEFR.length - 1; i >= 0; i--) if (s >= CEFR[i].min) return CEFR[i].label;
-  return 'A1';
+  const pts = ptsToNext(s);
+  const next = cefrNext(s);
+  return pts !== null ? `${cefrLevel.value} · ${Math.ceil(pts)} to ${next.label}` : 'C2';
 });
 
 const targetWords = computed(() =>
