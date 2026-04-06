@@ -136,7 +136,12 @@
         class="input"
         :placeholder="`Translation in ${nativeLang}…`"
         @keydown.enter="addToVocab"
+        @input="popup.alreadyExists = false"
       />
+
+      <p v-if="popup.alreadyExists" class="text-yellow-400 text-sm">
+        Already in your vocabulary.
+      </p>
 
       <div class="flex flex-col gap-2">
         <button
@@ -232,12 +237,12 @@ const targetTokens = computed(() => {
 });
 
 // Word popup
-const popup = ref({ word: null, raw: '', translation: '' });
+const popup = ref({ word: null, raw: '', translation: '', alreadyExists: false });
 const addingWord = ref(false);
 const addedWords = ref(new Set());
 
 function openPopup(word, raw) {
-  popup.value = { word, raw, translation: '' };
+  popup.value = { word, raw, translation: '', alreadyExists: false };
 }
 
 async function addToVocab() {
@@ -251,9 +256,11 @@ async function addToVocab() {
     addedWords.value = new Set([...addedWords.value, popup.value.word]);
     popup.value.word = null;
   } catch (e) {
-    // word might already exist — still close
-    addedWords.value = new Set([...addedWords.value, popup.value.word]);
-    popup.value.word = null;
+    if (e.response?.status === 409) {
+      // Word already in vocab — show feedback but don't close
+      popup.value.alreadyExists = true;
+    }
+    // other errors: silently ignore
   } finally {
     addingWord.value = false;
   }
