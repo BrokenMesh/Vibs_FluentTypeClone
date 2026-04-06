@@ -9,12 +9,12 @@ function stripMarkdown(text) {
 
 // CEFR levels mapped to skill score 0–1000
 const CEFR_LEVELS = [
-  { label: 'A1', min: 0,   max: 166  },
-  { label: 'A2', min: 167, max: 333  },
-  { label: 'B1', min: 334, max: 499  },
-  { label: 'B2', min: 500, max: 665  },
-  { label: 'C1', min: 666, max: 832  },
-  { label: 'C2', min: 833, max: 1000 },
+  { label: 'A1', min: 0,    max: 1666  },
+  { label: 'A2', min: 1667, max: 3333  },
+  { label: 'B1', min: 3334, max: 4999  },
+  { label: 'B2', min: 5000, max: 6665  },
+  { label: 'C1', min: 6666, max: 8332  },
+  { label: 'C2', min: 8333, max: 10000 },
 ];
 
 export function cefrLevel(skillScore) {
@@ -25,8 +25,8 @@ export function cefrLevel(skillScore) {
 }
 
 function targetWordCount(skillScore) {
-  // 4 words at A1, up to 14 at C2 (scales with 0–1000)
-  return 4 + Math.floor(skillScore / 100);
+  // 4 words at A1, up to 14 at C2 (scales with 0–10,000)
+  return 4 + Math.floor(skillScore / 1000);
 }
 
 /**
@@ -51,7 +51,7 @@ export async function generateSentence({
     : '';
 
   const prompt = `You are a language learning assistant helping a user learn ${targetLanguage}.
-Native language: ${nativeLanguage}. Skill level: ${cefr} (${skillScore}/1000).
+Native language: ${nativeLanguage}. Skill level: ${cefr} (${skillScore}/10000).
 
 Generate ONE creative, natural sentence in ${targetLanguage} that:
 - Has approximately ${wordCount} words
@@ -102,7 +102,7 @@ export async function generateWordOfDay({ targetLanguage, nativeLanguage, skillS
   const cefr = cefrLevel(skillScore);
 
   const prompt = `You are a language learning assistant.
-The user is learning ${targetLanguage} (native: ${nativeLanguage}). Level: ${cefr} (${skillScore}/1000).
+The user is learning ${targetLanguage} (native: ${nativeLanguage}). Level: ${cefr} (${skillScore}/10000).
 Words they already know: ${existing}
 
 Pick ONE new ${targetLanguage} word that:

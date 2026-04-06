@@ -1,10 +1,10 @@
 export const CEFR = [
-  { label: 'A1', name: 'Beginner',          min: 0   },
-  { label: 'A2', name: 'Elementary',         min: 167 },
-  { label: 'B1', name: 'Intermediate',       min: 334 },
-  { label: 'B2', name: 'Upper-intermediate', min: 500 },
-  { label: 'C1', name: 'Advanced',           min: 666 },
-  { label: 'C2', name: 'Proficient',         min: 833 },
+  { label: 'A1', name: 'Beginner',          min: 0    },
+  { label: 'A2', name: 'Elementary',         min: 1667 },
+  { label: 'B1', name: 'Intermediate',       min: 3334 },
+  { label: 'B2', name: 'Upper-intermediate', min: 5000 },
+  { label: 'C1', name: 'Advanced',           min: 6667 },
+  { label: 'C2', name: 'Proficient',         min: 8334 },
 ];
 
 /** Current CEFR entry for a skill score */
