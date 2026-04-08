@@ -26,6 +26,12 @@ export function initDb(dbPath = './data/fluenttype.db') {
     db.exec("ALTER TABLE sentences ADD COLUMN batch_date TEXT NOT NULL DEFAULT ''");
   }
 
+  const reviewCols = db.prepare("PRAGMA table_info(sentence_reviews)").all();
+  if (reviewCols.length && !reviewCols.some(c => c.name === 'track')) {
+    db.exec("ALTER TABLE sentence_reviews ADD COLUMN track TEXT NOT NULL DEFAULT 'typing'");
+    db.exec("UPDATE sentence_reviews SET track = 'dictation' WHERE mode IN ('dictation', 'dictation-practice')");
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +85,7 @@ export function initDb(dbPath = './data/fluenttype.db') {
       ease_factor REAL NOT NULL DEFAULT 2.5,
       interval_days REAL NOT NULL DEFAULT 1,
       next_review INTEGER NOT NULL DEFAULT 0,
+      track TEXT NOT NULL DEFAULT 'typing',
       reviewed_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 

@@ -61,8 +61,8 @@
         </div>
         <div class="flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.typing?.new ?? 0 }} new</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.typing?.due ?? 0 }} due</span>
           <span class="text-xs text-zinc-600">{{ skillDisplay }}</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
           <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
@@ -183,7 +183,7 @@ const fetchError = ref('');
 const currentSentence = ref(null);
 const isReview = ref(false);
 const doneForToday = ref(false);
-const queue = ref({ due: 0, newToday: 0 });
+const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 } });
 const mode = ref('challenge');
 const userInput = ref('');
 const inputEl = ref(null);
@@ -360,7 +360,7 @@ async function loadSentence() {
   try {
     // Refresh queue counts in parallel with loading the sentence
     const [res] = await Promise.all([
-      api.get(`/profiles/${profile.activeProfile.id}/sentences/next`),
+      api.get(`/profiles/${profile.activeProfile.id}/sentences/next?track=typing`),
       fetchQueue(),
     ]);
     if (res.data.done) {
@@ -370,8 +370,8 @@ async function loadSentence() {
     currentSentence.value = res.data.sentence;
     isReview.value = res.data.isReview;
     // Decrement count optimistically so header updates immediately
-    if (isReview.value) queue.value.due = Math.max(0, (queue.value.due ?? 1) - 1);
-    else queue.value.newToday = Math.max(0, (queue.value.newToday ?? 1) - 1);
+    if (isReview.value) queue.value.typing.due = Math.max(0, (queue.value.typing?.due ?? 1) - 1);
+    else queue.value.typing.new = Math.max(0, (queue.value.typing?.new ?? 1) - 1);
     resetState();
   } catch (e) {
     fetchError.value = e.response?.data?.error || 'Failed to load sentence';
@@ -405,7 +405,7 @@ function speak() {
 async function delayCard() {
   if (!currentSentence.value) return;
   try {
-    await api.post(`/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/delay`);
+    await api.post(`/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/delay`, { track: 'typing' });
   } catch (e) {
     console.error('Delay failed', e);
   }

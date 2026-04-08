@@ -61,8 +61,8 @@
         </div>
         <div class="flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.dictation?.new ?? 0 }} new</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.dictation?.due ?? 0 }} due</span>
           <span v-if="mode === 'challenge'" class="text-xs text-zinc-600">1.5× points</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
           <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
@@ -178,7 +178,7 @@ const fetchError = ref('');
 const currentSentence = ref(null);
 const isReview = ref(false);
 const doneForToday = ref(false);
-const queue = ref({ due: 0, newToday: 0 });
+const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 } });
 const mode = ref('challenge');
 const userInput = ref('');
 const inputEl = ref(null);
@@ -319,7 +319,7 @@ function submitPracticeWord() {
     const mistakes = wordResults.value.filter(r => !r).length;
     const score = Math.max(0, 1 - mistakes / 10);
     finished.value = true;
-    submitReview(score, 'practice');
+    submitReview(score, 'dictation-practice');
   }
 }
 
@@ -359,14 +359,14 @@ async function loadSentence() {
 
   try {
     const [res] = await Promise.all([
-      api.get(`/profiles/${profile.activeProfile.id}/sentences/next`),
+      api.get(`/profiles/${profile.activeProfile.id}/sentences/next?track=dictation`),
       fetchQueue(),
     ]);
     if (res.data.done) { doneForToday.value = true; return; }
     currentSentence.value = res.data.sentence;
     isReview.value = res.data.isReview;
-    if (isReview.value) queue.value.due = Math.max(0, (queue.value.due ?? 1) - 1);
-    else queue.value.newToday = Math.max(0, (queue.value.newToday ?? 1) - 1);
+    if (isReview.value) queue.value.dictation.due = Math.max(0, (queue.value.dictation?.due ?? 1) - 1);
+    else queue.value.dictation.new = Math.max(0, (queue.value.dictation?.new ?? 1) - 1);
 
     await nextTick();
     inputEl.value?.focus();
@@ -381,7 +381,7 @@ async function loadSentence() {
 async function delayCard() {
   if (!currentSentence.value) return;
   try {
-    await api.post(`/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/delay`);
+    await api.post(`/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/delay`, { track: 'dictation' });
   } catch (e) { console.error('Delay failed', e); }
   loadSentence();
 }

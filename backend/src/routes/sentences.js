@@ -19,6 +19,11 @@ function getProfile(profileId, userId) {
   ).get(profileId, userId);
 }
 
+/** Derive track from mode string */
+function trackForMode(mode) {
+  return (mode === 'dictation' || mode === 'dictation-practice') ? 'dictation' : 'typing';
+}
+
 /**
  * Ensure the daily word exists for today. Creates it if missing.
  * Returns { word, translation }.
@@ -81,7 +86,6 @@ async function ensureDailyWord(db, profile) {
 
 /**
  * Generate and persist one sentence, retrying up to maxAttempts times to avoid duplicates.
- * existingTexts is a shared array — append to it so parallel siblings see each other's results.
  */
 export async function generateAndSave(db, profile, dailyWord, existingTexts, batchDate) {
   const knownWords = db.prepare(
@@ -92,7 +96,6 @@ export async function generateAndSave(db, profile, dailyWord, existingTexts, bat
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let generated;
     try {
-      // Snapshot existingTexts at call time so each retry has fresh dedup list
       generated = await generateSentence({
         targetLanguage: profile.target_language,
         nativeLanguage: profile.native_language,
@@ -109,14 +112,13 @@ export async function generateAndSave(db, profile, dailyWord, existingTexts, bat
       throw e;
     }
 
-    // Check again against existingTexts (another parallel call may have added it)
     const normalised = generated.targetText.trim().toLowerCase();
     if (existingTexts.some(s => s.trim().toLowerCase() === normalised)) {
       console.warn('Race-condition duplicate, retrying…');
       continue;
     }
 
-    existingTexts.push(generated.targetText); // claim this slot before writing to DB
+    existingTexts.push(generated.targetText);
 
     const wordCount = generated.targetText.split(/\s+/).length;
     const result = db.prepare(
@@ -134,17 +136,17 @@ export async function generateAndSave(db, profile, dailyWord, existingTexts, bat
     return db.prepare('SELECT * FROM sentences WHERE id = ?').get(sentenceId);
   }
 
-  return null; // failed after all attempts
+  return null;
 }
 
 /**
- * GET /profiles/:profileId/sentences/next
+ * GET /profiles/:profileId/sentences/next?track=typing|dictation
  *
- * Queue priority:
- *   1. Due reviews (reviewed before, next_review <= now)
- *   2. New sentences from today's batch (never reviewed)
+ * Queue priority per track:
+ *   1. Due reviews in this track (next_review <= now)
+ *   2. Sentences never reviewed in this track (new)
  *   3. If batch incomplete → generate more (up to DAILY_BATCH_SIZE)
- *   4. Nothing left today → return { done: true }
+ *   4. Nothing left → return { done: true }
  */
 router.get('/next', async (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);
@@ -153,8 +155,9 @@ router.get('/next', async (req, res) => {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   const date = today();
+  const track = req.query.track === 'dictation' ? 'dictation' : 'typing';
 
-  // 1. Due reviews — pick the most overdue
+  // 1. Due reviews for this track — most overdue first
   const due = db.prepare(`
     SELECT s.*,
       sr.ease_factor as sr_ease, sr.interval_days as sr_interval, sr.next_review as sr_next_review
@@ -162,34 +165,35 @@ router.get('/next', async (req, res) => {
     JOIN (
       SELECT sentence_id, ease_factor, interval_days, next_review
       FROM sentence_reviews
-      WHERE profile_id = ?
+      WHERE profile_id = ? AND track = ?
       GROUP BY sentence_id
       HAVING MAX(reviewed_at)
     ) sr ON sr.sentence_id = s.id
     WHERE s.profile_id = ? AND sr.next_review <= ?
     ORDER BY sr.next_review ASC
     LIMIT 1
-  `).get(profile.id, profile.id, now);
+  `).get(profile.id, track, profile.id, now);
 
   if (due) {
     const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
-    return res.json({ sentence: due, isReview: true, dailyWord });
+    return res.json({ sentence: due, isReview: true, dailyWord, track });
   }
 
-  // 2. Any unreviewed sentence (any batch date — yesterday's carry over too)
+  // 2. Any sentence never reviewed in this track (carry over from any batch date)
   const newAny = db.prepare(`
     SELECT s.* FROM sentences s
     WHERE s.profile_id = ?
       AND NOT EXISTS (
-        SELECT 1 FROM sentence_reviews sr WHERE sr.sentence_id = s.id AND sr.profile_id = ?
+        SELECT 1 FROM sentence_reviews sr
+        WHERE sr.sentence_id = s.id AND sr.profile_id = ? AND sr.track = ?
       )
     ORDER BY s.batch_date DESC, s.id ASC
     LIMIT 1
-  `).get(profile.id, profile.id);
+  `).get(profile.id, profile.id, track);
 
   if (newAny) {
     const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
-    return res.json({ sentence: newAny, isReview: false, dailyWord });
+    return res.json({ sentence: newAny, isReview: false, dailyWord, track });
   }
 
   // 3. No unreviewed left — generate today's batch if incomplete
@@ -198,11 +202,10 @@ router.get('/next', async (req, res) => {
   ).get(profile.id, date).n;
 
   if (todayCount >= DAILY_BATCH_SIZE) {
-    // Batch full and nothing left — done for today
     return res.json({ done: true, nextBatchDate: date });
   }
 
-  // Generate sentences to fill today's batch — all in parallel
+  // Generate sentences to fill today's batch
   const dailyWord = await ensureDailyWord(db, profile);
   const existingTexts = db.prepare(
     'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
@@ -215,21 +218,15 @@ router.get('/next', async (req, res) => {
     Array.from({ length: toGenerate }, () => generateAndSave(db, profile, dailyWord, existingTexts, date))
   );
 
-  const saved = results
-    .filter(r => r.status === 'fulfilled' && r.value)
-    .map(r => r.value);
-
-  results
-    .filter(r => r.status === 'rejected')
-    .forEach(r => console.error('Sentence generation failed:', r.reason?.message));
+  const saved = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+  results.filter(r => r.status === 'rejected').forEach(r => console.error('Sentence generation failed:', r.reason?.message));
 
   if (saved.length === 0) {
     return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
   }
 
-  // Return the first saved sentence (lowest id = first in batch)
   const firstNew = saved.reduce((a, b) => (a.id < b.id ? a : b));
-  return res.json({ sentence: firstNew, isReview: false, dailyWord });
+  return res.json({ sentence: firstNew, isReview: false, dailyWord, track });
 });
 
 /**
@@ -244,7 +241,7 @@ router.get('/activity', (req, res) => {
   const rows = db.prepare(`
     SELECT DATE(reviewed_at, 'unixepoch') as date, COUNT(*) as count
     FROM sentence_reviews
-    WHERE profile_id = ? AND mode != 'delay'
+    WHERE profile_id = ? AND mode NOT IN ('delay')
       AND reviewed_at >= unixepoch('now', '-112 days')
     GROUP BY date
     ORDER BY date ASC
@@ -257,7 +254,7 @@ router.get('/activity', (req, res) => {
 
 /**
  * GET /profiles/:profileId/sentences/queue
- * Returns counts for the current queue. Also ensures the daily word exists.
+ * Returns per-track due/new counts plus daily word.
  */
 router.get('/queue', async (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);
@@ -267,35 +264,47 @@ router.get('/queue', async (req, res) => {
   const now = Math.floor(Date.now() / 1000);
   const date = today();
 
-  // Proactively generate today's word so the dashboard can show it immediately
   const dailyWord = await ensureDailyWord(db, profile);
 
-  const due = db.prepare(`
-    SELECT COUNT(*) as n FROM sentences s
-    JOIN (
-      SELECT sentence_id, MAX(reviewed_at) as last_rev, next_review
-      FROM sentence_reviews WHERE profile_id = ?
-      GROUP BY sentence_id
-    ) sr ON sr.sentence_id = s.id
-    WHERE s.profile_id = ? AND sr.next_review <= ?
-  `).get(profile.id, profile.id, now).n;
+  function dueForTrack(track) {
+    return db.prepare(`
+      SELECT COUNT(*) as n FROM sentences s
+      JOIN (
+        SELECT sentence_id, MAX(reviewed_at) as last_rev, next_review
+        FROM sentence_reviews WHERE profile_id = ? AND track = ?
+        GROUP BY sentence_id
+      ) sr ON sr.sentence_id = s.id
+      WHERE s.profile_id = ? AND sr.next_review <= ?
+    `).get(profile.id, track, profile.id, now).n;
+  }
 
-  const newToday = db.prepare(`
-    SELECT COUNT(*) as n FROM sentences s
-    WHERE s.profile_id = ?
-      AND NOT EXISTS (SELECT 1 FROM sentence_reviews sr WHERE sr.sentence_id = s.id AND sr.profile_id = ?)
-  `).get(profile.id, profile.id).n;
+  function newForTrack(track) {
+    return db.prepare(`
+      SELECT COUNT(*) as n FROM sentences s
+      WHERE s.profile_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM sentence_reviews sr
+          WHERE sr.sentence_id = s.id AND sr.profile_id = ? AND sr.track = ?
+        )
+    `).get(profile.id, profile.id, track).n;
+  }
 
   const totalToday = db.prepare(
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
 
-  res.json({ due, newToday, totalToday, dailyBatchSize: DAILY_BATCH_SIZE, dailyWord });
+  res.json({
+    typing:    { due: dueForTrack('typing'),    new: newForTrack('typing')    },
+    dictation: { due: dueForTrack('dictation'), new: newForTrack('dictation') },
+    totalToday,
+    dailyBatchSize: DAILY_BATCH_SIZE,
+    dailyWord,
+  });
 });
 
 /**
  * GET /profiles/:profileId/sentences
- * List past sentences with their latest review.
+ * List past sentences with their latest review (either track).
  */
 router.get('/', (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);
@@ -306,9 +315,7 @@ router.get('/', (req, res) => {
     ? `AND (s.target_text LIKE ? OR s.source_text LIKE ?)`
     : '';
   const likeParam = req.query.contains ? `%${req.query.contains}%` : null;
-  const params = likeParam
-    ? [profile.id, likeParam, likeParam]
-    : [profile.id];
+  const params = likeParam ? [profile.id, likeParam, likeParam] : [profile.id];
 
   const sentences = db.prepare(`
     SELECT s.*,
@@ -327,7 +334,7 @@ router.get('/', (req, res) => {
 
 /**
  * POST /profiles/:profileId/sentences/:sentenceId/review
- * Submit a completed challenge or practice attempt.
+ * Submit a completed attempt. Track is derived from mode.
  */
 router.post('/:sentenceId/review', (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);
@@ -344,37 +351,40 @@ router.post('/:sentenceId/review', (req, res) => {
     return res.status(400).json({ error: 'mode, score, wpm are required' });
   }
 
+  const track = trackForMode(mode);
+
+  // Get track-specific SM-2 state from most recent review in this track
   const existingReview = db.prepare(
-    'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? ORDER BY reviewed_at DESC LIMIT 1'
-  ).get(sentence.id, profile.id);
+    'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? AND track = ? ORDER BY reviewed_at DESC LIMIT 1'
+  ).get(sentence.id, profile.id, track);
 
   let easeFactor, intervalDays, nextReview;
 
-  if (mode === 'practice') {
-    // Practice never advances the SM-2 schedule — sentence stays at its current due date
+  if (mode === 'practice' || mode === 'dictation-practice') {
+    // Practice never advances the SM-2 schedule for this track
     easeFactor = existingReview?.ease_factor ?? 2.5;
     intervalDays = existingReview?.interval_days ?? 1;
-    nextReview = existingReview?.next_review ?? Math.floor(Date.now() / 1000); // stays due now if never reviewed
-  } else if (mode === 'challenge' || mode === 'dictation') {
-    const prevEase = existingReview?.ease_factor ?? 2.5;
-    const prevInterval = existingReview?.interval_days ?? 1;
+    nextReview = existingReview?.next_review ?? Math.floor(Date.now() / 1000);
+  } else {
+    // challenge or dictation — advance SM-2
     ({ easeFactor, intervalDays, nextReview } = sm2Update({
-      easeFactor: prevEase,
-      intervalDays: prevInterval,
+      easeFactor: existingReview?.ease_factor ?? 2.5,
+      intervalDays: existingReview?.interval_days ?? 1,
       score,
     }));
   }
 
   db.prepare(`
-    INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(sentence.id, profile.id, mode, score, wpm, easeFactor, intervalDays, nextReview);
+    INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review, track)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(sentence.id, profile.id, mode, score, wpm, easeFactor, intervalDays, nextReview, track);
 
   let newSkillScore = profile.skill_score;
   let xpGained = 0;
   if (mode === 'challenge' || mode === 'dictation') {
-    // Halve points if the user practiced this sentence before challenging/dictating it
-    const practicedFirst = existingReview?.mode === 'practice';
+    // Halve points if the user used practice mode in this track before challenging
+    const practiceMode = mode === 'dictation' ? 'dictation-practice' : 'practice';
+    const practicedFirst = existingReview?.mode === practiceMode;
     const modeMultiplier = mode === 'dictation' ? 1.5 : 1;
     const multiplier = (practicedFirst ? 0.5 : 1) * modeMultiplier;
     const delta = skillDelta(score, profile.skill_score) * multiplier;
@@ -391,7 +401,8 @@ router.post('/:sentenceId/review', (req, res) => {
 
 /**
  * POST /profiles/:profileId/sentences/:sentenceId/delay
- * Push the sentence to tomorrow without affecting SM-2 ease/interval.
+ * Push this sentence's track to tomorrow without affecting SM-2 ease/interval.
+ * Body: { track: 'typing' | 'dictation' }
  */
 router.post('/:sentenceId/delay', (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);
@@ -403,18 +414,20 @@ router.post('/:sentenceId/delay', (req, res) => {
   ).get(req.params.sentenceId, profile.id);
   if (!sentence) return res.status(404).json({ error: 'Sentence not found' });
 
+  const track = req.body?.track === 'dictation' ? 'dictation' : 'typing';
   const tomorrow = Math.floor(Date.now() / 1000) + 86400;
   const existing = db.prepare(
-    'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? ORDER BY reviewed_at DESC LIMIT 1'
-  ).get(sentence.id, profile.id);
+    'SELECT * FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? AND track = ? ORDER BY reviewed_at DESC LIMIT 1'
+  ).get(sentence.id, profile.id, track);
 
   db.prepare(`
-    INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review)
-    VALUES (?, ?, 'delay', 0, 0, ?, ?, ?)
+    INSERT INTO sentence_reviews (sentence_id, profile_id, mode, score, wpm, ease_factor, interval_days, next_review, track)
+    VALUES (?, ?, 'delay', 0, 0, ?, ?, ?, ?)
   `).run(sentence.id, profile.id,
     existing?.ease_factor ?? 2.5,
     existing?.interval_days ?? 1,
-    tomorrow
+    tomorrow,
+    track
   );
 
   res.json({ ok: true });
@@ -422,7 +435,7 @@ router.post('/:sentenceId/delay', (req, res) => {
 
 /**
  * DELETE /profiles/:profileId/sentences/:sentenceId/reviews
- * Reset SM-2 data for a sentence — makes it due immediately again.
+ * Reset all SM-2 data for a sentence (both tracks).
  */
 router.delete('/:sentenceId/reviews', (req, res) => {
   const profile = getProfile(req.params.profileId, req.userId);

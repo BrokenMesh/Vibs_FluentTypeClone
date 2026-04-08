@@ -54,8 +54,12 @@
         <div class="flex flex-col items-end gap-2">
           <div class="text-xs text-zinc-600">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</div>
           <div class="flex gap-1.5">
-            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
-            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ (queue.typing?.new ?? 0) }} new</span>
+            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ (queue.typing?.due ?? 0) + (queue.dictation?.due ?? 0) }} due</span>
+          </div>
+          <div v-if="queue.dictation?.due > 0 || queue.dictation?.new > 0" class="flex gap-1.5">
+            <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{{ queue.dictation?.new ?? 0 }} dictation new</span>
+            <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{{ queue.dictation?.due ?? 0 }} dictation due</span>
           </div>
         </div>
       </div>
@@ -131,7 +135,7 @@ import { cefrOf, cefrNext, ptsToNext, levelProgress } from '../utils/cefr.js';
 const profile = useProfileStore();
 const loading = ref(false);
 const stats = ref({ vocabCount: 0, sentenceCount: 0, dueCount: 0, avgAccuracy: null });
-const queue = ref({ dailyWord: null, due: 0, totalToday: 0, dailyBatchSize: 10 });
+const queue = ref({ dailyWord: null, typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, totalToday: 0, dailyBatchSize: 10 });
 const activityMap = ref({});
 
 // Build a 16-week (112-day) grid: array of 16 weeks, each with 7 day cells
@@ -206,7 +210,7 @@ async function fetchStats() {
   stats.value = {
     vocabCount: vocab.length,
     sentenceCount: sentences.length,
-    dueCount: queueRes.data.due,
+    dueCount: (queueRes.data.typing?.due ?? 0) + (queueRes.data.dictation?.due ?? 0),
     avgAccuracy: avg,
   };
 }
