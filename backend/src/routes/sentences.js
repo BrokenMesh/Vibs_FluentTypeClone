@@ -233,6 +233,29 @@ router.get('/next', async (req, res) => {
 });
 
 /**
+ * GET /profiles/:profileId/sentences/activity
+ * Returns a map of { "YYYY-MM-DD": count } for reviews over the past 112 days.
+ */
+router.get('/activity', (req, res) => {
+  const profile = getProfile(req.params.profileId, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT DATE(reviewed_at, 'unixepoch') as date, COUNT(*) as count
+    FROM sentence_reviews
+    WHERE profile_id = ? AND mode != 'delay'
+      AND reviewed_at >= unixepoch('now', '-112 days')
+    GROUP BY date
+    ORDER BY date ASC
+  `).all(profile.id);
+
+  const activity = {};
+  for (const row of rows) activity[row.date] = row.count;
+  res.json(activity);
+});
+
+/**
  * GET /profiles/:profileId/sentences/queue
  * Returns counts for the current queue. Also ensures the daily word exists.
  */
@@ -350,9 +373,12 @@ router.post('/:sentenceId/review', (req, res) => {
   let newSkillScore = profile.skill_score;
   let xpGained = 0;
   if (mode === 'challenge') {
-    const delta = skillDelta(score, profile.skill_score);
+    // Halve points if the user practiced this sentence before challenging it
+    const practicedFirst = existingReview?.mode === 'practice';
+    const multiplier = practicedFirst ? 0.5 : 1;
+    const delta = skillDelta(score, profile.skill_score) * multiplier;
     newSkillScore = Math.max(0, Math.min(10000, profile.skill_score + delta));
-    xpGained = Math.round(score * sentence.word_count * 10);
+    xpGained = Math.round(score * sentence.word_count * 10 * multiplier);
     db.prepare(
       'UPDATE language_profiles SET skill_score = ?, xp = xp + ? WHERE id = ?'
     ).run(newSkillScore, xpGained, profile.id);

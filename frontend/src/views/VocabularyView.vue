@@ -227,6 +227,8 @@ async function addWord() {
 }
 
 async function deleteWord(id) {
+  const word = vocabulary.value.find(w => w.id === id);
+  if (!confirm(`Delete "${word?.word}"? This cannot be undone.`)) return;
   if (expanded.value === id) { expanded.value = null; wordSentences.value = []; }
   try {
     await api.delete(`/profiles/${profile.activeProfile.id}/vocabulary/${id}`);

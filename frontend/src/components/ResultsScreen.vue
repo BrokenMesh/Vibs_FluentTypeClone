@@ -265,7 +265,10 @@ async function addToVocab() {
 }
 
 async function askClaude() {
-  const text = `What does the word "${popup.value.raw}" mean in ${props.targetLang}?\n\nPlease explain:\n- Its meaning and common usage\n- How it's built (roots, prefixes, suffixes)\n- Conjugations or declensions if applicable\n- A few example sentences`;
+  const sentenceCtx = props.sentence
+    ? `\n\nContext (the sentence it appeared in):\n"${props.sentence.source_text}"\n→ "${props.sentence.target_text}"`
+    : '';
+  const text = `What does the word "${popup.value.raw}" mean in ${props.targetLang}?${sentenceCtx}\n\nPlease explain:\n- Its meaning and common usage\n- How it's built (roots, prefixes, suffixes)\n- Conjugations or declensions if applicable\n- A few example sentences`;
   if (navigator.share) {
     try { await navigator.share({ text }); } catch { /* cancelled */ }
   } else if (navigator.clipboard) {

@@ -62,10 +62,29 @@
 
       <!-- Stats grid -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="vocab words" :value="stats.vocabCount" />
+        <StatCard label="streak" :value="streak + (streak === 1 ? ' day' : ' days')" color="brand" />
         <StatCard label="sentences done" :value="stats.sentenceCount" />
         <StatCard label="reviews due" :value="stats.dueCount" color="yellow" />
         <StatCard label="avg accuracy" :value="stats.avgAccuracy !== null ? Math.round(stats.avgAccuracy * 100) + '%' : '—'" />
+      </div>
+
+      <!-- Activity grid -->
+      <div class="card space-y-2">
+        <p class="text-xs text-zinc-600 uppercase tracking-wider">activity — last 16 weeks</p>
+        <div class="flex gap-1 overflow-x-auto pb-1">
+          <div v-for="(week, wi) in activityGrid" :key="wi" class="flex flex-col gap-1">
+            <div
+              v-for="(day, di) in week"
+              :key="di"
+              :title="day.date + ': ' + day.count + ' review' + (day.count !== 1 ? 's' : '')"
+              :class="['w-3 h-3 rounded-sm flex-shrink-0', activityColor(day.count)]"
+            />
+          </div>
+        </div>
+        <div class="flex justify-between text-xs text-zinc-700">
+          <span>16 weeks ago</span>
+          <span>today</span>
+        </div>
       </div>
 
       <!-- Profile switcher (if multiple) -->
@@ -110,6 +129,47 @@ const profile = useProfileStore();
 const loading = ref(false);
 const stats = ref({ vocabCount: 0, sentenceCount: 0, dueCount: 0, avgAccuracy: null });
 const queue = ref({ dailyWord: null, due: 0, totalToday: 0, dailyBatchSize: 10 });
+const activityMap = ref({});
+
+// Build a 16-week (112-day) grid: array of 16 weeks, each with 7 day cells
+const activityGrid = computed(() => {
+  const today = new Date();
+  const msPerDay = 86400000;
+  const days = [];
+  for (let i = 111; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * msPerDay);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ date: key, count: activityMap.value[key] ?? 0 });
+  }
+  const weeks = [];
+  for (let w = 0; w < 16; w++) weeks.push(days.slice(w * 7, w * 7 + 7));
+  return weeks;
+});
+
+const streak = computed(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  let count = 0;
+  let d = new Date();
+  while (true) {
+    const key = d.toISOString().slice(0, 10);
+    if (!activityMap.value[key] || activityMap.value[key] === 0) {
+      // Allow today to be empty (session just started)
+      if (key === today && count === 0) { d.setDate(d.getDate() - 1); continue; }
+      break;
+    }
+    count++;
+    d.setDate(d.getDate() - 1);
+  }
+  return count;
+});
+
+function activityColor(count) {
+  if (count === 0) return 'bg-zinc-800';
+  if (count <= 2) return 'bg-brand-900';
+  if (count <= 5) return 'bg-brand-600';
+  if (count <= 9) return 'bg-brand-500';
+  return 'bg-brand-400';
+}
 
 const score = computed(() => profile.activeProfile?.skill_score ?? 0);
 const cefrLevel = computed(() => cefrOf(score.value).label);
@@ -124,14 +184,15 @@ const nextLabel = computed(() => {
 async function fetchStats() {
   if (!profile.activeProfile) return;
   const profileId = profile.activeProfile.id;
-  const now = Math.floor(Date.now() / 1000);
 
-  const [vocabRes, sentenceRes, queueRes] = await Promise.all([
+  const [vocabRes, sentenceRes, queueRes, activityRes] = await Promise.all([
     api.get(`/profiles/${profileId}/vocabulary`),
     api.get(`/profiles/${profileId}/sentences`),
     api.get(`/profiles/${profileId}/sentences/queue`),
+    api.get(`/profiles/${profileId}/sentences/activity`),
   ]);
   queue.value = queueRes.data;
+  activityMap.value = activityRes.data;
 
   const vocab = vocabRes.data;
   const sentences = sentenceRes.data;
@@ -142,7 +203,7 @@ async function fetchStats() {
   stats.value = {
     vocabCount: vocab.length,
     sentenceCount: sentences.length,
-    dueCount: queueRes.data.due,   // sentence reviews due, not vocab
+    dueCount: queueRes.data.due,
     avgAccuracy: avg,
   };
 }
