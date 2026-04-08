@@ -45,21 +45,28 @@
       </div>
 
       <!-- Word of the day -->
-      <div v-if="queue.dailyWord" class="card flex items-center justify-between">
-        <div>
-          <p class="text-xs text-zinc-600 uppercase tracking-wider mb-1">word of the day</p>
-          <p class="text-2xl font-semibold text-brand-400">{{ queue.dailyWord.word }}</p>
-          <p class="text-zinc-500 text-sm mt-0.5">{{ queue.dailyWord.translation }}</p>
-        </div>
-        <div class="flex flex-col items-end gap-2">
-          <div class="text-xs text-zinc-600">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</div>
-          <div class="flex gap-1.5">
-            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ (queue.typing?.new ?? 0) }} new</span>
-            <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ (queue.typing?.due ?? 0) + (queue.dictation?.due ?? 0) }} due</span>
+      <div v-if="queue.dailyWord" class="card">
+        <div class="flex items-start justify-between gap-4">
+          <!-- Word -->
+          <div>
+            <p class="text-xs text-zinc-600 uppercase tracking-wider mb-1">word of the day</p>
+            <p class="text-2xl font-semibold text-brand-400">{{ queue.dailyWord.word }}</p>
+            <p class="text-zinc-500 text-sm mt-0.5">{{ queue.dailyWord.translation }}</p>
+            <p class="text-xs text-zinc-700 mt-2">next word in {{ nextWordCountdown }}</p>
           </div>
-          <div v-if="queue.dictation?.due > 0 || queue.dictation?.new > 0" class="flex gap-1.5">
-            <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{{ queue.dictation?.new ?? 0 }} dictation new</span>
-            <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{{ queue.dictation?.due ?? 0 }} dictation due</span>
+          <!-- Per-track queue counts -->
+          <div class="flex flex-col gap-1.5 shrink-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-zinc-600 w-16 text-right">typing</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.typing?.new ?? 0 }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.typing?.due ?? 0 }} due</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-zinc-600 w-16 text-right">dictation</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.dictation?.new ?? 0 }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.dictation?.due ?? 0 }} due</span>
+            </div>
+            <p class="text-xs text-zinc-700 text-right">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</p>
           </div>
         </div>
       </div>
@@ -67,7 +74,7 @@
       <!-- Stats grid -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="streak" :value="streak + (streak === 1 ? ' day' : ' days')" color="brand" />
-        <StatCard label="sentences done" :value="stats.sentenceCount" />
+        <StatCard label="direct rate" :value="stats.directRate !== null ? Math.round(stats.directRate * 100) + '%' : '—'" />
         <StatCard label="reviews due" :value="stats.dueCount" color="yellow" />
         <StatCard label="avg accuracy" :value="stats.avgAccuracy !== null ? Math.round(stats.avgAccuracy * 100) + '%' : '—'" />
       </div>
@@ -125,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
@@ -134,7 +141,20 @@ import { cefrOf, cefrNext, ptsToNext, levelProgress } from '../utils/cefr.js';
 
 const profile = useProfileStore();
 const loading = ref(false);
-const stats = ref({ vocabCount: 0, sentenceCount: 0, dueCount: 0, avgAccuracy: null });
+const stats = ref({ dueCount: 0, avgAccuracy: null, directRate: null });
+
+// Countdown to midnight (when next word of the day is chosen)
+const nextWordCountdown = ref('');
+let countdownInterval = null;
+function updateCountdown() {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const diff = midnight - now;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  nextWordCountdown.value = `${h}h ${m}m`;
+}
 const queue = ref({ dailyWord: null, typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, totalToday: 0, dailyBatchSize: 10 });
 const activityMap = ref({});
 
@@ -192,8 +212,7 @@ async function fetchStats() {
   if (!profile.activeProfile) return;
   const profileId = profile.activeProfile.id;
 
-  const [vocabRes, sentenceRes, queueRes, activityRes] = await Promise.all([
-    api.get(`/profiles/${profileId}/vocabulary`),
+  const [sentenceRes, queueRes, activityRes] = await Promise.all([
     api.get(`/profiles/${profileId}/sentences`),
     api.get(`/profiles/${profileId}/sentences/queue`),
     api.get(`/profiles/${profileId}/sentences/activity`),
@@ -201,21 +220,22 @@ async function fetchStats() {
   queue.value = queueRes.data;
   activityMap.value = activityRes.data;
 
-  const vocab = vocabRes.data;
   const sentences = sentenceRes.data;
-
-  const scores = sentences.filter(s => s.last_score !== null).map(s => s.last_score);
+  const reviewed = sentences.filter(s => s.last_reviewed !== null);
+  const direct = reviewed.filter(s => s.last_mode === 'challenge' || s.last_mode === 'dictation');
+  const scores = reviewed.map(s => s.last_score).filter(s => s !== null);
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 
   stats.value = {
-    vocabCount: vocab.length,
-    sentenceCount: sentences.length,
     dueCount: (queueRes.data.typing?.due ?? 0) + (queueRes.data.dictation?.due ?? 0),
     avgAccuracy: avg,
+    directRate: reviewed.length > 0 ? direct.length / reviewed.length : null,
   };
 }
 
 onMounted(async () => {
+  updateCountdown();
+  countdownInterval = setInterval(updateCountdown, 60000);
   loading.value = true;
   try {
     await profile.fetchProfiles();
@@ -227,4 +247,6 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+onUnmounted(() => clearInterval(countdownInterval));
 </script>
