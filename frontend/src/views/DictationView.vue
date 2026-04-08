@@ -30,7 +30,7 @@
       v-else-if="showResults"
       :score="lastScore"
       :wpm="0"
-      mode="dictation"
+      :mode="mode === 'challenge' ? 'dictation' : 'practice'"
       :xp-gained="xpGained"
       :new-skill="newSkill"
       :days-until-review="daysUntilReview"
@@ -39,9 +39,9 @@
       :target-lang="profile.activeProfile?.target_language"
       :profile-id="profile.activeProfile?.id"
       :user-typed="userTyped"
-      :typed-words="[]"
-      :target-words-arr="[]"
-      :word-results-arr="[]"
+      :typed-words="typedWords"
+      :target-words-arr="targetWords"
+      :word-results-arr="wordResults"
       @next="loadSentence"
     />
 
@@ -49,28 +49,34 @@
     <template v-else-if="currentSentence">
       <!-- Header row -->
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-medium px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            dictation
-          </span>
-          <span class="text-xs text-zinc-600">1.5× points</span>
+        <div class="flex gap-2">
+          <button
+            @click="setMode('challenge')"
+            :class="['btn text-sm px-3 py-1', mode === 'challenge' ? 'btn-primary' : 'btn-ghost']"
+          >challenge</button>
+          <button
+            @click="setMode('practice')"
+            :class="['btn text-sm px-3 py-1', mode === 'practice' ? 'bg-zinc-700 text-zinc-100' : 'btn-ghost']"
+          >practice</button>
         </div>
         <div class="flex flex-wrap gap-2 items-center">
-          <span v-if="started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
+          <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.newToday ?? 0 }} new</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.due ?? 0 }} due</span>
+          <span v-if="mode === 'challenge'" class="text-xs text-zinc-600">1.5× points</span>
           <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
           <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
         </div>
       </div>
 
       <!-- Listen card -->
-      <div class="card text-center space-y-6 py-8">
+      <div class="card text-center space-y-5 py-8">
         <div>
           <p class="text-xs text-zinc-600 uppercase tracking-wider mb-1">
             {{ profile.activeProfile.target_language }} — listen and type what you hear
           </p>
-          <p class="text-zinc-700 text-sm mt-1">no peeking — type the sentence you hear</p>
+          <p v-if="mode === 'challenge'" class="text-zinc-700 text-sm mt-1">type the full sentence, press Enter</p>
+          <p v-else class="text-zinc-700 text-sm mt-1">word {{ practiceWordIndex + 1 }} of {{ targetWords.length }} — press Space to advance</p>
         </div>
 
         <!-- Big play button -->
@@ -79,7 +85,7 @@
           :class="[
             'mx-auto flex items-center justify-center w-20 h-20 rounded-full transition-all duration-200',
             playing
-              ? 'bg-purple-500/20 text-purple-300 scale-110'
+              ? 'bg-brand-500/20 text-brand-300 scale-110'
               : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-zinc-100 hover:scale-105'
           ]"
           title="Play sentence"
@@ -93,22 +99,66 @@
         <p class="text-xs text-zinc-700">tap to replay anytime</p>
       </div>
 
+      <!-- Practice mode: word dots + hint -->
+      <div v-if="mode === 'practice'" class="card space-y-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs text-zinc-600 uppercase tracking-wider">
+            word {{ practiceWordIndex + 1 }} of {{ targetWords.length }}
+          </p>
+          <button
+            @click="hintVisible = !hintVisible"
+            class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-500 transition-colors"
+          >{{ hintVisible ? 'hide hint' : 'hint' }}</button>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5">
+          <span
+            v-for="(word, wi) in targetWords"
+            :key="wi"
+            :class="[
+              'h-2 rounded-full transition-all duration-200',
+              wi < practiceWordIndex
+                ? (wordResults[wi] ? 'bg-brand-500 w-4' : 'bg-red-500 w-4')
+                : wi === practiceWordIndex
+                  ? 'bg-zinc-400 w-4'
+                  : 'bg-zinc-700 w-2'
+            ]"
+          />
+        </div>
+
+        <div v-if="hintVisible" class="text-xl font-medium text-yellow-400 tracking-wide">
+          {{ targetWords[practiceWordIndex] }}
+        </div>
+
+        <div v-if="practiceWordIndex > 0" class="flex flex-wrap gap-2 text-sm">
+          <span
+            v-for="(word, wi) in targetWords.slice(0, practiceWordIndex)"
+            :key="wi"
+            :class="wordResults[wi] ? 'text-brand-400' : 'text-red-400 line-through'"
+          >{{ word }}</span>
+        </div>
+      </div>
+
       <!-- Input area -->
       <div class="relative">
         <input
           ref="inputEl"
           v-model="userInput"
           @input="handleInput"
-          @keydown.enter="submitDictation"
+          @keydown.enter="mode === 'challenge' ? submitChallenge() : null"
+          @keydown="handleKeydown"
           :disabled="finished"
-          placeholder="type what you heard, press Enter…"
+          :placeholder="mode === 'challenge' ? 'type what you heard, press Enter…' : 'type word, press Space…'"
           class="input text-lg py-4 pr-24 focus:ring-2"
+          :class="inputClass"
           autocomplete="off"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
         />
-        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-600">Enter ↵</span>
+        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-600">
+          {{ mode === 'challenge' ? 'Enter ↵' : 'Space →' }}
+        </span>
       </div>
     </template>
   </div>
@@ -129,22 +179,48 @@ const currentSentence = ref(null);
 const isReview = ref(false);
 const doneForToday = ref(false);
 const queue = ref({ due: 0, newToday: 0 });
+const mode = ref('challenge');
 const userInput = ref('');
 const inputEl = ref(null);
 const started = ref(false);
 const finished = ref(false);
 const showResults = ref(false);
 const playing = ref(false);
+const hintVisible = ref(false);
 
 const startTime = ref(null);
 const elapsedSeconds = ref(0);
 let timerInterval = null;
 
+// Practice tracking
+const practiceWordIndex = ref(0);
+const wordResults = ref([]);
+const typedWords = ref([]);
+
+// Challenge tracking
 const userTyped = ref('');
+
 const lastScore = ref(0);
 const xpGained = ref(0);
 const newSkill = ref(0);
 const daysUntilReview = ref(1);
+
+const targetWords = computed(() =>
+  currentSentence.value ? currentSentence.value.target_text.split(/\s+/) : []
+);
+
+// Red border when typed chars don't match — challenge compares full sentence, practice compares current word
+const inputClass = computed(() => {
+  if (!started.value || !currentSentence.value) return '';
+  const typed = userInput.value;
+  const target = mode.value === 'challenge'
+    ? currentSentence.value.target_text
+    : (targetWords.value[practiceWordIndex.value] ?? '');
+  for (let i = 0; i < typed.length; i++) {
+    if (typed[i] !== target[i]) return 'border-red-600 focus:ring-red-600';
+  }
+  return 'border-brand-700 focus:ring-brand-500';
+});
 
 // TTS
 const LANG_CODES = {
@@ -168,18 +244,53 @@ function playAudio() {
   window.speechSynthesis.speak(utt);
 }
 
+function setMode(m) {
+  mode.value = m;
+  resetState();
+}
+
+function resetState() {
+  userInput.value = '';
+  userTyped.value = '';
+  typedWords.value = [];
+  wordResults.value = [];
+  practiceWordIndex.value = 0;
+  started.value = false;
+  finished.value = false;
+  hintVisible.value = false;
+  elapsedSeconds.value = 0;
+  startTime.value = null;
+  clearInterval(timerInterval);
+  nextTick(() => inputEl.value?.focus());
+}
+
 function handleInput() {
   if (finished.value) return;
   if (!started.value && userInput.value.length > 0) {
     started.value = true;
-    startTime.value = Date.now();
-    timerInterval = setInterval(() => {
-      elapsedSeconds.value = Math.floor((Date.now() - startTime.value) / 1000);
-    }, 1000);
+    if (mode.value === 'challenge') {
+      startTime.value = Date.now();
+      timerInterval = setInterval(() => {
+        elapsedSeconds.value = Math.floor((Date.now() - startTime.value) / 1000);
+      }, 1000);
+    }
+  }
+  // Mobile: virtual keyboards don't fire keydown for space
+  if (mode.value === 'practice' && userInput.value.endsWith(' ')) {
+    userInput.value = userInput.value.trimEnd();
+    submitPracticeWord();
   }
 }
 
-function submitDictation() {
+function handleKeydown(e) {
+  if (e.key === ' ' && mode.value === 'practice' && !finished.value) {
+    e.preventDefault();
+    if (!started.value) started.value = true;
+    submitPracticeWord();
+  }
+}
+
+function submitChallenge() {
   if (finished.value || !currentSentence.value) return;
   clearInterval(timerInterval);
   const typed = userInput.value;
@@ -190,15 +301,34 @@ function submitDictation() {
   const score = Math.max(0, 1 - mistakes / 10);
 
   finished.value = true;
-  submitReview(score);
+  submitReview(score, 'dictation');
 }
 
-async function submitReview(score) {
+function submitPracticeWord() {
+  const currentWord = targetWords.value[practiceWordIndex.value];
+  const typed = userInput.value.trim();
+  const correct = typed.toLowerCase() === currentWord.toLowerCase();
+
+  wordResults.value.push(correct);
+  typedWords.value.push(typed);
+  userInput.value = '';
+  hintVisible.value = false;
+  practiceWordIndex.value++;
+
+  if (practiceWordIndex.value >= targetWords.value.length) {
+    const mistakes = wordResults.value.filter(r => !r).length;
+    const score = Math.max(0, 1 - mistakes / 10);
+    finished.value = true;
+    submitReview(score, 'practice');
+  }
+}
+
+async function submitReview(score, reviewMode) {
   lastScore.value = score;
   try {
     const res = await api.post(
       `/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/review`,
-      { mode: 'dictation', score, wpm: 0 }
+      { mode: reviewMode, score, wpm: 0 }
     );
     xpGained.value = res.data.xpGained ?? 0;
     newSkill.value = res.data.newSkillScore ?? profile.activeProfile.skill_score;
@@ -224,14 +354,8 @@ async function loadSentence() {
   doneForToday.value = false;
   loading.value = true;
   fetchError.value = '';
-  userInput.value = '';
-  userTyped.value = '';
-  started.value = false;
-  finished.value = false;
   playing.value = false;
-  elapsedSeconds.value = 0;
-  startTime.value = null;
-  clearInterval(timerInterval);
+  resetState();
 
   try {
     const [res] = await Promise.all([
@@ -246,7 +370,6 @@ async function loadSentence() {
 
     await nextTick();
     inputEl.value?.focus();
-    // Auto-play after a short delay so the user knows a new sentence loaded
     setTimeout(playAudio, 400);
   } catch (e) {
     fetchError.value = e.response?.data?.error || 'Failed to load sentence';
