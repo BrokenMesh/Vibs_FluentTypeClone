@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-3 sm:space-y-6">
     <!-- No profile -->
     <div v-if="!profile.activeProfile" class="text-center py-20 text-zinc-500">
       <p class="mb-4">No language profile selected.</p>
@@ -70,37 +70,37 @@
       </div>
 
       <!-- Listen card -->
-      <div class="card text-center space-y-5 py-8">
-        <div>
-          <p class="text-xs text-zinc-600 uppercase tracking-wider mb-1">
-            {{ profile.activeProfile.target_language }} — listen and type what you hear
-          </p>
-          <p v-if="mode === 'challenge'" class="text-zinc-700 text-sm mt-1">type the full sentence, press Enter</p>
-          <p v-else class="text-zinc-700 text-sm mt-1">word {{ practiceWordIndex + 1 }} of {{ targetWords.length }} — press Space to advance</p>
-        </div>
-
-        <!-- Big play button -->
+      <div class="card !p-3 sm:!p-4 md:!p-6 flex sm:flex-col items-center sm:text-center gap-4 sm:gap-5 sm:py-8">
+        <!-- Play button — left on mobile, centered on desktop -->
         <button
           @click="playAudio"
           :class="[
-            'mx-auto flex items-center justify-center w-20 h-20 rounded-full transition-all duration-200',
+            'flex-shrink-0 flex items-center justify-center rounded-full transition-all duration-200',
+            'w-14 h-14 sm:w-20 sm:h-20',
             playing
               ? 'bg-brand-500/20 text-brand-300 scale-110'
               : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-zinc-100 hover:scale-105'
           ]"
           title="Play sentence"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 sm:h-8 sm:w-8" viewBox="0 0 24 24" fill="currentColor">
             <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
             <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
           </svg>
         </button>
 
-        <p class="text-xs text-zinc-700">tap to replay anytime</p>
+        <!-- Labels -->
+        <div class="text-left sm:text-center">
+          <p class="text-xs text-zinc-600 uppercase tracking-wider">
+            {{ profile.activeProfile.target_language }} — listen and type what you hear
+          </p>
+          <p v-if="mode === 'challenge'" class="text-zinc-700 text-sm mt-1">type the full sentence, press Enter</p>
+          <p v-else class="text-zinc-700 text-sm mt-1">word {{ practiceWordIndex + 1 }} of {{ targetWords.length }} — press Space</p>
+        </div>
       </div>
 
       <!-- Practice mode: word dots + hint -->
-      <div v-if="mode === 'practice'" class="card space-y-3">
+      <div v-if="mode === 'practice'" class="card !p-3 sm:!p-4 md:!p-6 space-y-2 sm:space-y-3">
         <div class="flex items-center justify-between">
           <p class="text-xs text-zinc-600 uppercase tracking-wider">
             word {{ practiceWordIndex + 1 }} of {{ targetWords.length }}
@@ -149,7 +149,7 @@
           @keydown="handleKeydown"
           :disabled="finished"
           :placeholder="mode === 'challenge' ? 'type what you heard, press Enter…' : 'type word, press Space…'"
-          class="input text-lg py-4 pr-24 focus:ring-2"
+          class="input text-base sm:text-lg py-3 sm:py-4 pr-24 focus:ring-2"
           :class="inputClass"
           autocomplete="off"
           autocorrect="off"

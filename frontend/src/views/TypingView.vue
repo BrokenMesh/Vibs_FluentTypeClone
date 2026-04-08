@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-3 sm:space-y-6">
     <!-- No profile -->
     <div v-if="!profile.activeProfile" class="text-center py-20 text-zinc-500">
       <p class="mb-4">No language profile selected.</p>
@@ -71,8 +71,8 @@
 
 
       <!-- Source text (what user reads and translates) -->
-      <div class="card">
-        <div class="flex items-center justify-between mb-2">
+      <div class="card !p-3 sm:!p-4 md:!p-6">
+        <div class="flex items-center justify-between mb-1.5">
           <p class="text-xs text-zinc-600 uppercase tracking-wider">{{ profile.activeProfile.native_language }} — translate this</p>
           <button
             @click="speak"
@@ -85,11 +85,11 @@
             </svg>
           </button>
         </div>
-        <p class="text-zinc-200 text-lg leading-relaxed">{{ currentSentence.source_text }}</p>
+        <p class="text-zinc-200 text-base sm:text-lg leading-snug sm:leading-relaxed">{{ currentSentence.source_text }}</p>
       </div>
 
       <!-- Practice mode: word progress + hint -->
-      <div v-if="mode === 'practice'" class="card space-y-3">
+      <div v-if="mode === 'practice'" class="card !p-3 sm:!p-4 md:!p-6 space-y-2 sm:space-y-3">
         <div class="flex items-center justify-between">
           <p class="text-xs text-zinc-600 uppercase tracking-wider">
             {{ profile.activeProfile.target_language }} — word {{ practiceWordIndex + 1 }} of {{ targetWords.length }}
@@ -134,7 +134,7 @@
       </div>
 
       <!-- Challenge mode: just a label, no target text shown -->
-      <div v-else class="card">
+      <div v-else class="card !p-3 sm:!p-4 md:!p-6">
         <p class="text-xs text-zinc-600 uppercase tracking-wider">
           {{ profile.activeProfile.target_language }} — type your translation
         </p>
@@ -151,7 +151,7 @@
           @keydown="handleKeydown"
           :disabled="finished"
           :placeholder="mode === 'practice' ? 'type word, press Space…' : 'type full translation, press Enter…'"
-          class="input text-lg py-4 pr-24 focus:ring-2"
+          class="input text-base sm:text-lg py-3 sm:py-4 pr-24 focus:ring-2"
           :class="inputClass"
           autocomplete="off"
           autocorrect="off"
