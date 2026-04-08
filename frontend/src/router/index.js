@@ -29,6 +29,10 @@ const routes = [
     component: () => import('../views/TypingView.vue'),
   },
   {
+    path: '/dictate',
+    component: () => import('../views/DictationView.vue'),
+  },
+  {
     path: '/vocabulary',
     component: () => import('../views/VocabularyView.vue'),
   },

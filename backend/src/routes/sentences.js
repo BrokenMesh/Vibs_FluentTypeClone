@@ -355,7 +355,7 @@ router.post('/:sentenceId/review', (req, res) => {
     easeFactor = existingReview?.ease_factor ?? 2.5;
     intervalDays = existingReview?.interval_days ?? 1;
     nextReview = existingReview?.next_review ?? Math.floor(Date.now() / 1000); // stays due now if never reviewed
-  } else {
+  } else if (mode === 'challenge' || mode === 'dictation') {
     const prevEase = existingReview?.ease_factor ?? 2.5;
     const prevInterval = existingReview?.interval_days ?? 1;
     ({ easeFactor, intervalDays, nextReview } = sm2Update({
@@ -372,10 +372,11 @@ router.post('/:sentenceId/review', (req, res) => {
 
   let newSkillScore = profile.skill_score;
   let xpGained = 0;
-  if (mode === 'challenge') {
-    // Halve points if the user practiced this sentence before challenging it
+  if (mode === 'challenge' || mode === 'dictation') {
+    // Halve points if the user practiced this sentence before challenging/dictating it
     const practicedFirst = existingReview?.mode === 'practice';
-    const multiplier = practicedFirst ? 0.5 : 1;
+    const modeMultiplier = mode === 'dictation' ? 1.5 : 1;
+    const multiplier = (practicedFirst ? 0.5 : 1) * modeMultiplier;
     const delta = skillDelta(score, profile.skill_score) * multiplier;
     newSkillScore = Math.max(0, Math.min(10000, profile.skill_score + delta));
     xpGained = Math.round(score * sentence.word_count * 10 * multiplier);

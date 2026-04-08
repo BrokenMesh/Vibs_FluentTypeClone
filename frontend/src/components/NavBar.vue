@@ -8,6 +8,7 @@
       <!-- Desktop nav -->
       <div class="hidden md:flex items-center gap-1">
         <RouterLink to="/type" class="btn-ghost text-sm px-3 py-1.5 rounded">type</RouterLink>
+        <RouterLink to="/dictate" class="btn-ghost text-sm px-3 py-1.5 rounded text-purple-400">dictate</RouterLink>
         <RouterLink to="/vocabulary" class="btn-ghost text-sm px-3 py-1.5 rounded">vocab</RouterLink>
         <RouterLink to="/history" class="btn-ghost text-sm px-3 py-1.5 rounded">history</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="btn-ghost text-sm px-3 py-1.5 rounded text-zinc-500">admin</RouterLink>
@@ -51,6 +52,7 @@
     <div v-if="menuOpen" class="md:hidden border-t border-zinc-800 bg-zinc-950">
       <div class="container mx-auto px-4 max-w-4xl py-2 flex flex-col gap-1">
         <RouterLink to="/type" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">type</RouterLink>
+        <RouterLink to="/dictate" class="btn-ghost text-sm px-3 py-2 rounded text-left text-purple-400" @click="menuOpen = false">dictate</RouterLink>
         <RouterLink to="/vocabulary" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">vocab</RouterLink>
         <RouterLink to="/history" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">history</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="btn-ghost text-sm px-3 py-2 rounded text-left text-zinc-500" @click="menuOpen = false">admin</RouterLink>

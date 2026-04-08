@@ -26,9 +26,13 @@
         <div class="text-2xl font-semibold text-zinc-100">{{ wpm }}</div>
         <div class="text-xs text-zinc-500">wpm</div>
       </div>
-      <div v-if="mode === 'challenge' && xpGained > 0" class="text-center">
+      <div v-if="(mode === 'challenge' || mode === 'dictation') && xpGained > 0" class="text-center">
         <div class="text-2xl font-semibold text-brand-400">+{{ xpGained }}</div>
         <div class="text-xs text-zinc-500">xp</div>
+      </div>
+      <div v-if="mode === 'dictation'" class="text-center">
+        <div class="text-sm font-semibold text-purple-400">1.5×</div>
+        <div class="text-xs text-zinc-500">dictation bonus</div>
       </div>
       <div v-if="mode === 'practice'" class="text-center">
         <div class="text-lg font-semibold text-zinc-400">practice</div>
@@ -77,7 +81,7 @@
       </div>
 
       <!-- What the user typed — error diff -->
-      <div v-if="mode === 'challenge' && userTyped" class="space-y-1 pt-1 border-t border-zinc-700">
+      <div v-if="(mode === 'challenge' || mode === 'dictation') && userTyped" class="space-y-1 pt-1 border-t border-zinc-700">
         <p class="text-xs text-zinc-600">your attempt</p>
         <p class="font-mono text-sm leading-relaxed break-all">
           <span
@@ -106,7 +110,7 @@
 
     <!-- Skill + next review -->
     <div class="flex justify-center gap-6 text-sm text-zinc-500">
-      <span v-if="mode === 'challenge'">
+      <span v-if="mode === 'challenge' || mode === 'dictation'">
         <span class="text-brand-400 font-medium">{{ cefrLabel(newSkill) }}</span>
         <span class="text-zinc-600 ml-1">{{ skillNextLabel(newSkill) }}</span>
       </span>

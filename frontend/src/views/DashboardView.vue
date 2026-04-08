@@ -111,6 +111,7 @@
       <!-- CTA -->
       <div class="flex gap-3">
         <RouterLink to="/type" class="btn-primary flex-1 text-center">start typing</RouterLink>
+        <RouterLink to="/dictate" class="flex-1 text-center btn text-sm font-medium px-4 py-2 rounded-lg border border-purple-700 text-purple-400 hover:bg-purple-500/10 transition-colors">dictation</RouterLink>
         <RouterLink to="/vocabulary" class="btn-ghost flex-1 text-center">vocabulary</RouterLink>
       </div>
     </template>
