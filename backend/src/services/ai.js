@@ -93,6 +93,49 @@ Where source_text is a natural ${nativeLanguage} translation the user will read,
   };
 }
 
+// Pre-assigned topic pool for batch generation — shuffled per call to ensure variety
+const TOPIC_POOL = [
+  'a missed train or bus', 'cooking a new recipe', 'a job interview', 'visiting a museum',
+  'a broken appliance at home', 'morning routine', 'a sports match', 'gardening',
+  'a doctor appointment', 'online shopping gone wrong', 'a neighborhood argument',
+  'studying for an exam', 'a surprise birthday party', 'a power outage', 'making new friends',
+  'a rainy afternoon indoors', 'a road trip', 'a loud concert', 'a flight delay',
+  'childhood memory', 'a busy street market', 'a phone call with bad news',
+  'ordering food at a café', 'a noisy neighbor', 'a holiday family dinner',
+  'moving to a new apartment', 'a strange dream', 'losing a wallet', 'a job promotion',
+  'a long queue at a shop', 'an unexpected guest', 'fixing something broken',
+  'a walk in the park', 'a heated debate', 'reading a disappointing book',
+  'a school reunion', 'a wedding ceremony', 'a job resignation', 'a pet doing something funny',
+];
+
+// Grammar structure pool to enforce sentence type variety
+const STRUCTURE_POOL = [
+  'affirmative statement in present tense with a frequency adverb (toujours, souvent, jamais…)',
+  'yes/no question using inversion or est-ce que',
+  'past narrative using passé composé (avoir/être + past participle)',
+  'imperative / direct command or advice',
+  'sentence using a modal verb: devoir, pouvoir, or vouloir',
+  'near-future sentence using "aller + infinitive"',
+  'conditional hypothesis: "Si... [imparfait], ... [conditionnel]"',
+  'exclamation or strong emotional reaction',
+  'sentence with a pronominal/reflexive verb (se lever, se souvenir…)',
+  'negative sentence using ne… pas, ne… jamais, or ne… rien',
+  'comparison sentence using plus… que, moins… que, or aussi… que',
+  'relative clause using qui, que, or dont',
+  'open question using où, quand, pourquoi, comment, or combien',
+  'imperfect tense describing a past habit or ongoing state',
+  'sentence using an indirect object pronoun (lui, leur, y, en)',
+];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 /**
  * Generate a batch of diverse sentences in one AI call.
  * Returns an array of { sourceText, targetText, words }, deduplicated against existingSentences.
@@ -109,32 +152,53 @@ export async function generateSentenceBatch({
   const cefr = cefrLevel(skillScore);
   const wordCount = targetWordCount(skillScore);
   const knownList = knownWords.slice(0, 60).join(', ') || 'none yet';
-  const avoidList = existingSentences.slice(0, 40).map(s => `- ${s}`).join('\n') || 'none';
+  const avoidList = existingSentences.slice(0, 40).map(s => `"${s}"`).join('\n') || 'none';
+
+  // Pre-assign a unique topic + grammar structure to each slot
+  const topics = shuffle(TOPIC_POOL).slice(0, count);
+  const structures = shuffle(STRUCTURE_POOL).slice(0, count);
+
+  // ~30% of slots reinforce known vocab, ~70% introduce new words
+  const slots = Array.from({ length: count }, (_, i) => {
+    const vocab = i < Math.ceil(count * 0.3)
+      ? `REINFORCE: naturally use at least one word from the known list`
+      : `CHALLENGE: introduce vocabulary NOT in the known list — teach the user something new`;
+    return `${i + 1}. Topic: "${topics[i]}" | Grammar: ${structures[i]} | Vocab mode: ${vocab}`;
+  }).join('\n');
 
   const anchorInstruction = anchorWord
-    ? `- Every sentence MUST naturally include the ${targetLanguage} word: "${anchorWord}"`
+    ? `\nANCHOR RULE: every sentence must naturally include the ${targetLanguage} word "${anchorWord}".\n`
     : '';
 
-  const prompt = `You are a language learning assistant helping a user learn ${targetLanguage}.
-Native language: ${nativeLanguage}. Skill level: ${cefr} (${skillScore}/10000).
+  const prompt = `You are an expert ${targetLanguage} language teacher creating practice sentences for a learner.
 
-Generate exactly ${count} DIVERSE sentences in ${targetLanguage}. Rules for the whole batch:
-- Each sentence has approximately ${wordCount} words and matches ${cefr}-level grammar
+LEARNER PROFILE
+- Native language: ${nativeLanguage}
+- Target language: ${targetLanguage}
+- CEFR level: ${cefr} (${skillScore}/10000)
+- Target sentence length: ~${wordCount} words
+- Known vocabulary: ${knownList}
 ${anchorInstruction}
-- Beyond the anchor word, actively vary vocabulary — use different verbs, nouns, and adjectives across sentences. Draw from known words where natural: ${knownList}
-- Every sentence must cover a COMPLETELY DIFFERENT topic, setting, or situation (home, work, nature, travel, food, emotions, etc.)
-- Mix sentence types: statements, questions, commands, exclamations
-- NO two sentences may share the same subject-verb combination or repeat the same structure
-- Avoid bland or generic phrases — use vivid, specific real-world scenarios
-- Do NOT produce any of these already-used sentences:
+TASK
+Generate exactly ${count} ${targetLanguage} sentences, one per numbered slot below. Each slot specifies the topic, grammar structure, and vocabulary mode — follow them strictly.
+
+SLOTS
+${slots}
+
+GLOBAL RULES (apply to every sentence)
+- Match ${cefr} grammar complexity — no simpler, no harder
+- Be vivid and specific; avoid generic or textbook-bland phrasing
+- No two sentences may share the same subject, verb, or opening pattern
+- Do NOT reproduce any of these existing sentences:
 ${avoidList}
 
-Respond ONLY with a valid JSON array (no markdown, no explanation):
-[
-  {"target_text": "...", "source_text": "...", "words": ["word1", ...]},
-  ...
-]
-source_text is a natural ${nativeLanguage} translation. words is lowercased key ${targetLanguage} vocabulary (no punctuation). Return exactly ${count} objects.`;
+OUTPUT FORMAT
+Respond ONLY with a valid JSON array — no markdown, no explanation, no extra keys.
+Each element: {"target_text": "...", "source_text": "...", "words": ["word1", ...]}
+- target_text: the ${targetLanguage} sentence
+- source_text: a fluent, natural ${nativeLanguage} translation
+- words: lowercase array of key ${targetLanguage} vocabulary from that sentence (no punctuation)
+Return exactly ${count} objects in the same order as the slots.`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
