@@ -161,13 +161,16 @@ export async function generateSentenceBatch({
   // ~30% of slots reinforce known vocab, ~70% introduce new words
   const slots = Array.from({ length: count }, (_, i) => {
     const vocab = i < Math.ceil(count * 0.3)
-      ? `REINFORCE: naturally use at least one word from the known list`
+      ? `REINFORCE: use at least one word from the known list naturally`
       : `CHALLENGE: introduce vocabulary NOT in the known list — teach the user something new`;
-    return `${i + 1}. Topic: "${topics[i]}" | Grammar: ${structures[i]} | Vocab mode: ${vocab}`;
+    const anchor = anchorWord
+      ? ` | MANDATORY: the word "${anchorWord}" must appear in target_text verbatim`
+      : '';
+    return `${i + 1}. Topic: "${topics[i]}" | Grammar: ${structures[i]} | Vocab: ${vocab}${anchor}`;
   }).join('\n');
 
   const anchorInstruction = anchorWord
-    ? `\nANCHOR RULE: every sentence must naturally include the ${targetLanguage} word "${anchorWord}".\n`
+    ? `\nCRITICAL RULE: every single sentence MUST contain the exact ${targetLanguage} word "${anchorWord}". If a sentence cannot use it naturally given its topic, restructure the topic — do NOT omit the word under any circumstances.\n`
     : '';
 
   const prompt = `You are an expert ${targetLanguage} language teacher creating practice sentences for a learner.
@@ -212,11 +215,17 @@ Return exactly ${count} objects in the same order as the slots.`;
 
   // Deduplicate against existing sentences and within the batch itself
   const seen = new Set(existingSentences.map(s => s.trim().toLowerCase()));
+  const anchorLower = anchorWord ? anchorWord.toLowerCase() : null;
   const results = [];
   for (const item of parsed) {
     if (!item.target_text || !item.source_text || !Array.isArray(item.words)) continue;
     const norm = item.target_text.trim().toLowerCase();
     if (seen.has(norm)) continue;
+    // Drop sentences that don't contain the anchor word (model non-compliance)
+    if (anchorLower && !norm.includes(anchorLower)) {
+      console.warn(`Dropped sentence missing anchor "${anchorWord}": ${item.target_text}`);
+      continue;
+    }
     seen.add(norm);
     results.push({ sourceText: item.source_text, targetText: item.target_text, words: item.words });
   }

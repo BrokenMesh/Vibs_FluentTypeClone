@@ -317,11 +317,22 @@ router.get('/', (req, res) => {
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
   const db = getDb();
-  const containsFilter = req.query.contains
-    ? `AND (s.target_text LIKE ? OR s.source_text LIKE ?)`
-    : '';
-  const likeParam = req.query.contains ? `%${req.query.contains}%` : null;
-  const params = likeParam ? [profile.id, likeParam, likeParam] : [profile.id];
+
+  let whereExtra = '';
+  let params = [profile.id];
+
+  if (req.query.orphaned === 'true') {
+    // Sentences where none of the user's vocabulary words appear in the target text
+    whereExtra = `AND NOT EXISTS (
+      SELECT 1 FROM vocabulary v
+      WHERE v.profile_id = s.profile_id
+        AND LOWER(s.target_text) LIKE '%' || LOWER(v.word) || '%'
+    )`;
+  } else if (req.query.contains) {
+    whereExtra = `AND (s.target_text LIKE ? OR s.source_text LIKE ?)`;
+    const like = `%${req.query.contains}%`;
+    params = [profile.id, like, like];
+  }
 
   const sentences = db.prepare(`
     SELECT s.*,
@@ -331,9 +342,9 @@ router.get('/', (req, res) => {
     LEFT JOIN sentence_reviews sr ON sr.id = (
       SELECT id FROM sentence_reviews WHERE sentence_id = s.id ORDER BY reviewed_at DESC LIMIT 1
     )
-    WHERE s.profile_id = ? ${containsFilter}
+    WHERE s.profile_id = ? ${whereExtra}
     ORDER BY s.created_at DESC
-    LIMIT 100
+    LIMIT 200
   `).all(...params);
   res.json(sentences);
 });

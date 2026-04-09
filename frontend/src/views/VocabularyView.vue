@@ -118,6 +118,63 @@
       </div>
 
       <p class="text-xs text-zinc-700 text-right">{{ vocabulary.length }} words total</p>
+
+      <!-- Orphaned sentences section -->
+      <div class="border-t border-zinc-800 pt-4">
+        <button
+          @click="toggleOrphaned"
+          class="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <svg
+            :class="['h-3.5 w-3.5 shrink-0 transition-transform', showOrphaned ? 'rotate-90' : '']"
+            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+          >
+            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/>
+          </svg>
+          <span>Unlinked sentences</span>
+          <span v-if="orphanedSentences.length > 0" class="text-xs bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">
+            {{ orphanedSentences.length }}
+          </span>
+        </button>
+        <p class="text-xs text-zinc-700 mt-1 ml-5">Sentences that share no words with your vocabulary list</p>
+
+        <div v-if="showOrphaned" class="mt-3 space-y-2">
+          <div v-if="orphanedLoading" class="text-zinc-600 text-sm animate-pulse ml-1">loading…</div>
+          <div v-else-if="orphanedSentences.length === 0" class="text-zinc-700 text-sm ml-1">
+            All sentences share at least one vocabulary word.
+          </div>
+          <div v-else class="space-y-2">
+            <div
+              v-for="s in orphanedSentences"
+              :key="s.id"
+              class="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 space-y-0.5">
+                  <p class="text-zinc-500 text-sm">{{ s.source_text }}</p>
+                  <p class="text-zinc-100 text-sm">{{ s.target_text }}</p>
+                </div>
+                <div class="shrink-0 text-right space-y-1">
+                  <div v-if="s.last_score !== null">
+                    <span :class="['text-sm font-medium', s.last_score >= 0.8 ? 'text-brand-400' : s.last_score >= 0.5 ? 'text-yellow-400' : 'text-red-400']">
+                      {{ Math.round(s.last_score * 100) }}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex justify-end">
+                <button
+                  @click="deleteOrphaned(s)"
+                  :disabled="deleting === s.id"
+                  class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700 transition-colors disabled:opacity-40"
+                >
+                  {{ deleting === s.id ? '…' : 'delete' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -143,6 +200,10 @@ const wordSentences = ref([]);
 const sentencesLoading = ref(false);
 const resetting = ref(null);
 const deleting = ref(null);
+
+const showOrphaned = ref(false);
+const orphanedSentences = ref([]);
+const orphanedLoading = ref(false);
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -258,6 +319,36 @@ async function deleteWord(id) {
     vocabulary.value = vocabulary.value.filter(w => w.id !== id);
   } catch (e) {
     console.error(e);
+  }
+}
+
+async function toggleOrphaned() {
+  showOrphaned.value = !showOrphaned.value;
+  if (showOrphaned.value && orphanedSentences.value.length === 0) {
+    orphanedLoading.value = true;
+    try {
+      const res = await api.get(`/profiles/${profile.activeProfile.id}/sentences`, {
+        params: { orphaned: 'true' },
+      });
+      orphanedSentences.value = res.data;
+    } catch (e) {
+      console.error('Failed to load orphaned sentences', e);
+    } finally {
+      orphanedLoading.value = false;
+    }
+  }
+}
+
+async function deleteOrphaned(s) {
+  if (!confirm('Delete this sentence? This cannot be undone.')) return;
+  deleting.value = s.id;
+  try {
+    await api.delete(`/profiles/${profile.activeProfile.id}/sentences/${s.id}`);
+    orphanedSentences.value = orphanedSentences.value.filter(x => x.id !== s.id);
+  } catch (e) {
+    console.error('Delete failed', e);
+  } finally {
+    deleting.value = null;
   }
 }
 
