@@ -93,14 +93,23 @@
                     <span v-else-if="s.last_reviewed === null" class="text-blue-400">new</span>
                     <span v-if="s.last_mode" class="text-zinc-700">{{ s.last_mode }}</span>
                   </div>
-                  <button
-                    v-if="s.last_reviewed !== null"
-                    @click="resetSentence(s)"
-                    :disabled="resetting === s.id"
-                    class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700 transition-colors disabled:opacity-40"
-                  >
-                    {{ resetting === s.id ? '…' : 'reset' }}
-                  </button>
+                  <div class="flex gap-1.5">
+                    <button
+                      v-if="s.last_reviewed !== null"
+                      @click="resetSentence(s)"
+                      :disabled="resetting === s.id"
+                      class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700 transition-colors disabled:opacity-40"
+                    >
+                      {{ resetting === s.id ? '…' : 'reset' }}
+                    </button>
+                    <button
+                      @click="deleteSentence(s)"
+                      :disabled="deleting === s.id"
+                      class="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700 transition-colors disabled:opacity-40"
+                    >
+                      {{ deleting === s.id ? '…' : 'delete' }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -133,6 +142,7 @@ const expanded = ref(null);
 const wordSentences = ref([]);
 const sentencesLoading = ref(false);
 const resetting = ref(null);
+const deleting = ref(null);
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -173,6 +183,19 @@ async function toggleExpand(word) {
     console.error('Failed to load sentences', e);
   } finally {
     sentencesLoading.value = false;
+  }
+}
+
+async function deleteSentence(s) {
+  if (!confirm(`Delete this sentence? This cannot be undone.`)) return;
+  deleting.value = s.id;
+  try {
+    await api.delete(`/profiles/${profile.activeProfile.id}/sentences/${s.id}`);
+    wordSentences.value = wordSentences.value.filter(x => x.id !== s.id);
+  } catch (e) {
+    console.error('Delete failed', e);
+  } finally {
+    deleting.value = null;
   }
 }
 

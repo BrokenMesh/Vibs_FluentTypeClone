@@ -440,6 +440,24 @@ router.post('/:sentenceId/delay', (req, res) => {
 });
 
 /**
+ * DELETE /profiles/:profileId/sentences/:sentenceId
+ * Delete a sentence and all its reviews permanently.
+ */
+router.delete('/:sentenceId', (req, res) => {
+  const profile = getProfile(req.params.profileId, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const db = getDb();
+  const sentence = db.prepare(
+    'SELECT id FROM sentences WHERE id = ? AND profile_id = ?'
+  ).get(req.params.sentenceId, profile.id);
+  if (!sentence) return res.status(404).json({ error: 'Sentence not found' });
+
+  db.prepare('DELETE FROM sentences WHERE id = ?').run(req.params.sentenceId);
+  res.json({ ok: true });
+});
+
+/**
  * DELETE /profiles/:profileId/sentences/:sentenceId/reviews
  * Reset all SM-2 data for a sentence (both tracks).
  */
