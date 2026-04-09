@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb, rowid } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
-import { generateSentence, generateWordOfDay } from '../services/ai.js';
+import { generateSentenceBatch, generateWordOfDay } from '../services/ai.js';
 import { sm2Update, skillDelta } from '../services/sm2.js';
 
 const router = Router({ mergeParams: true });
@@ -10,7 +10,8 @@ router.use(requireAuth);
 const DAILY_BATCH_SIZE = 10;
 
 export function today() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function getProfile(profileId, userId) {
@@ -69,74 +70,58 @@ async function ensureDailyWord(db, profile) {
   }
 
   const newDailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
-
-  // Generate sentences for the new word immediately (background, non-blocking)
-  const existingTexts = db.prepare(
-    'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
-  ).all(profile.id).map(r => r.target_text);
-  Promise.allSettled(
-    Array.from({ length: DAILY_BATCH_SIZE }, () => generateAndSave(db, profile, newDailyWord, existingTexts, date))
-  ).then(results => {
-    const ok = results.filter(r => r.status === 'fulfilled' && r.value).length;
-    console.log(`Generated ${ok}/${DAILY_BATCH_SIZE} sentences for word of day "${newDailyWord.word}"`);
-  }).catch(e => console.error('WotD sentence gen failed:', e));
-
   return newDailyWord;
 }
 
 /**
- * Generate and persist one sentence, retrying up to maxAttempts times to avoid duplicates.
+ * Generate a batch of sentences and persist them all.
+ * Uses one AI call for the whole batch — avoids duplicates and ensures diversity.
+ * Returns array of saved sentence rows.
  */
-export async function generateAndSave(db, profile, dailyWord, existingTexts, batchDate) {
+async function generateAndSaveBatch(db, profile, anchorWord, batchDate, count = DAILY_BATCH_SIZE) {
   const knownWords = db.prepare(
-    'SELECT word FROM vocabulary WHERE profile_id = ? ORDER BY times_seen DESC LIMIT 50'
+    'SELECT word FROM vocabulary WHERE profile_id = ? ORDER BY times_seen DESC LIMIT 60'
   ).all(profile.id).map(r => r.word);
 
-  const maxAttempts = 3;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    let generated;
-    try {
-      generated = await generateSentence({
-        targetLanguage: profile.target_language,
-        nativeLanguage: profile.native_language,
-        skillScore: profile.skill_score,
-        knownWords,
-        anchorWord: dailyWord?.word ?? null,
-        existingSentences: [...existingTexts],
-      });
-    } catch (e) {
-      if (e.message === 'DUPLICATE') {
-        console.warn(`Duplicate sentence on attempt ${attempt + 1}, retrying…`);
-        continue;
-      }
-      throw e;
-    }
+  const existingTexts = db.prepare(
+    'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 60'
+  ).all(profile.id).map(r => r.target_text);
 
-    const normalised = generated.targetText.trim().toLowerCase();
-    if (existingTexts.some(s => s.trim().toLowerCase() === normalised)) {
-      console.warn('Race-condition duplicate, retrying…');
-      continue;
-    }
+  const generated = await generateSentenceBatch({
+    targetLanguage: profile.target_language,
+    nativeLanguage: profile.native_language,
+    skillScore: profile.skill_score,
+    knownWords,
+    anchorWord: anchorWord?.word ?? null,
+    count,
+    existingSentences: existingTexts,
+  });
 
-    existingTexts.push(generated.targetText);
+  const insertSentence = db.prepare(
+    'INSERT INTO sentences (profile_id, source_text, target_text, difficulty, word_count, batch_date) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const updateSeen = db.prepare(
+    'UPDATE vocabulary SET times_seen = times_seen + 1 WHERE profile_id = ? AND word = ?'
+  );
 
-    const wordCount = generated.targetText.split(/\s+/).length;
-    const result = db.prepare(
-      'INSERT INTO sentences (profile_id, source_text, target_text, difficulty, word_count, batch_date) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(profile.id, generated.sourceText, generated.targetText, profile.skill_score, wordCount, batchDate);
-    const sentenceId = rowid(result);
-
-    const updateSeen = db.prepare(
-      'UPDATE vocabulary SET times_seen = times_seen + 1 WHERE profile_id = ? AND word = ?'
-    );
-    for (const w of generated.words) {
-      updateSeen.run(profile.id, w.toLowerCase().trim());
-    }
-
-    return db.prepare('SELECT * FROM sentences WHERE id = ?').get(sentenceId);
+  const saved = [];
+  for (const gen of generated) {
+    const wordCount = gen.targetText.split(/\s+/).length;
+    const result = insertSentence.run(profile.id, gen.sourceText, gen.targetText, profile.skill_score, wordCount, batchDate);
+    for (const w of gen.words) updateSeen.run(profile.id, w.toLowerCase().trim());
+    saved.push(db.prepare('SELECT * FROM sentences WHERE id = ?').get(Number(result.lastInsertRowid)));
   }
 
-  return null;
+  return saved;
+}
+
+/**
+ * Generate and persist one sentence (used when adding a manual vocabulary word).
+ * Kept for backward compatibility with vocabulary route.
+ */
+export async function generateAndSave(db, profile, anchorWord, existingTexts, batchDate) {
+  const results = await generateAndSaveBatch(db, profile, anchorWord, batchDate, 1);
+  return results[0] ?? null;
 }
 
 /**
@@ -205,21 +190,18 @@ router.get('/next', async (req, res) => {
     return res.json({ done: true, nextBatchDate: date });
   }
 
-  // Generate sentences to fill today's batch
+  // Generate today's full batch in one AI call
   const dailyWord = await ensureDailyWord(db, profile);
-  const existingTexts = db.prepare(
-    'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
-  ).all(profile.id).map(r => r.target_text);
-
   const toGenerate = DAILY_BATCH_SIZE - todayCount;
-  console.log(`Generating ${toGenerate} sentences in parallel for profile ${profile.id} (batch ${date})`);
+  console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
 
-  const results = await Promise.allSettled(
-    Array.from({ length: toGenerate }, () => generateAndSave(db, profile, dailyWord, existingTexts, date))
-  );
-
-  const saved = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-  results.filter(r => r.status === 'rejected').forEach(r => console.error('Sentence generation failed:', r.reason?.message));
+  let saved;
+  try {
+    saved = await generateAndSaveBatch(db, profile, dailyWord, date, toGenerate);
+  } catch (e) {
+    console.error('Batch sentence generation failed:', e.message);
+    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
+  }
 
   if (saved.length === 0) {
     return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
@@ -293,12 +275,36 @@ router.get('/queue', async (req, res) => {
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
 
+  // Direct rate: fraction of challenge-attempted sentences with no prior practice in the same track
+  const rateRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN prior = 0 THEN 1 ELSE 0 END) as direct
+    FROM (
+      SELECT fc.sentence_id, fc.track,
+        (SELECT COUNT(*) FROM sentence_reviews p
+         WHERE p.sentence_id = fc.sentence_id
+           AND p.profile_id = ?
+           AND p.track = fc.track
+           AND p.mode IN ('practice', 'dictation-practice')
+           AND p.reviewed_at < fc.first_at) as prior
+      FROM (
+        SELECT sentence_id, track, MIN(reviewed_at) as first_at
+        FROM sentence_reviews
+        WHERE profile_id = ? AND mode IN ('challenge', 'dictation')
+        GROUP BY sentence_id, track
+      ) fc
+    )
+  `).get(profile.id, profile.id);
+  const directRate = rateRow.total > 0 ? rateRow.direct / rateRow.total : null;
+
   res.json({
     typing:    { due: dueForTrack('typing'),    new: newForTrack('typing')    },
     dictation: { due: dueForTrack('dictation'), new: newForTrack('dictation') },
     totalToday,
     dailyBatchSize: DAILY_BATCH_SIZE,
     dailyWord,
+    directRate,
   });
 });
 

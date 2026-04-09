@@ -94,6 +94,72 @@ Where source_text is a natural ${nativeLanguage} translation the user will read,
 }
 
 /**
+ * Generate a batch of diverse sentences in one AI call.
+ * Returns an array of { sourceText, targetText, words }, deduplicated against existingSentences.
+ */
+export async function generateSentenceBatch({
+  targetLanguage,
+  nativeLanguage,
+  skillScore,
+  knownWords = [],
+  anchorWord = null,
+  count = 10,
+  existingSentences = [],
+}) {
+  const cefr = cefrLevel(skillScore);
+  const wordCount = targetWordCount(skillScore);
+  const knownList = knownWords.slice(0, 60).join(', ') || 'none yet';
+  const avoidList = existingSentences.slice(0, 40).map(s => `- ${s}`).join('\n') || 'none';
+
+  const anchorInstruction = anchorWord
+    ? `- Every sentence MUST naturally include the ${targetLanguage} word: "${anchorWord}"`
+    : '';
+
+  const prompt = `You are a language learning assistant helping a user learn ${targetLanguage}.
+Native language: ${nativeLanguage}. Skill level: ${cefr} (${skillScore}/10000).
+
+Generate exactly ${count} DIVERSE sentences in ${targetLanguage}. Rules for the whole batch:
+- Each sentence has approximately ${wordCount} words and matches ${cefr}-level grammar
+${anchorInstruction}
+- Beyond the anchor word, actively vary vocabulary — use different verbs, nouns, and adjectives across sentences. Draw from known words where natural: ${knownList}
+- Every sentence must cover a COMPLETELY DIFFERENT topic, setting, or situation (home, work, nature, travel, food, emotions, etc.)
+- Mix sentence types: statements, questions, commands, exclamations
+- NO two sentences may share the same subject-verb combination or repeat the same structure
+- Avoid bland or generic phrases — use vivid, specific real-world scenarios
+- Do NOT produce any of these already-used sentences:
+${avoidList}
+
+Respond ONLY with a valid JSON array (no markdown, no explanation):
+[
+  {"target_text": "...", "source_text": "...", "words": ["word1", ...]},
+  ...
+]
+source_text is a natural ${nativeLanguage} translation. words is lowercased key ${targetLanguage} vocabulary (no punctuation). Return exactly ${count} objects.`;
+
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 3072,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = stripMarkdown(message.content[0].text.trim());
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('AI returned non-array for batch');
+
+  // Deduplicate against existing sentences and within the batch itself
+  const seen = new Set(existingSentences.map(s => s.trim().toLowerCase()));
+  const results = [];
+  for (const item of parsed) {
+    if (!item.target_text || !item.source_text || !Array.isArray(item.words)) continue;
+    const norm = item.target_text.trim().toLowerCase();
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    results.push({ sourceText: item.source_text, targetText: item.target_text, words: item.words });
+  }
+  return results;
+}
+
+/**
  * Generate the word of the day for a profile.
  * Returns { word, translation }.
  */

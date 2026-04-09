@@ -82,7 +82,7 @@
       <!-- Activity grid -->
       <div class="card space-y-2">
         <p class="text-xs text-zinc-600 uppercase tracking-wider">activity — last 16 weeks</p>
-        <div class="flex gap-1 overflow-x-auto pb-1">
+        <div class="flex gap-1 justify-center flex-wrap">
           <div v-for="(week, wi) in activityGrid" :key="wi" class="flex flex-col gap-1">
             <div
               v-for="(day, di) in week"
@@ -192,9 +192,10 @@ const streak = computed(() => {
 
 function activityColor(count) {
   if (count === 0) return 'bg-zinc-800';
-  if (count <= 2) return 'bg-brand-900';
-  if (count <= 5) return 'bg-brand-600';
-  if (count <= 9) return 'bg-brand-500';
+  if (count < 5)  return 'bg-brand-900';
+  if (count < 15) return 'bg-brand-700';
+  if (count < 30) return 'bg-brand-600';
+  if (count < 50) return 'bg-brand-500';
   return 'bg-brand-400';
 }
 
@@ -220,16 +221,15 @@ async function fetchStats() {
   queue.value = queueRes.data;
   activityMap.value = activityRes.data;
 
-  const sentences = sentenceRes.data;
-  const reviewed = sentences.filter(s => s.last_reviewed !== null);
-  const direct = reviewed.filter(s => s.last_mode === 'challenge' || s.last_mode === 'dictation');
-  const scores = reviewed.map(s => s.last_score).filter(s => s !== null);
+  const scores = sentenceRes.data
+    .filter(s => s.last_score !== null && (s.last_mode === 'challenge' || s.last_mode === 'dictation'))
+    .map(s => s.last_score);
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 
   stats.value = {
     dueCount: (queueRes.data.typing?.due ?? 0) + (queueRes.data.dictation?.due ?? 0),
     avgAccuracy: avg,
-    directRate: reviewed.length > 0 ? direct.length / reviewed.length : null,
+    directRate: queueRes.data.directRate,
   };
 }
 

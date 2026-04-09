@@ -64,7 +64,8 @@
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.typing?.new ?? 0 }} new</span>
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.typing?.due ?? 0 }} due</span>
           <span class="text-xs text-zinc-600">{{ skillDisplay }}</span>
-          <span v-if="isReview" class="text-xs text-yellow-400">↩ review</span>
+          <span v-if="isReview" class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">↩ review</span>
+          <span v-else class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">✦ new</span>
           <button @click="delayCard" class="text-xs text-zinc-700 hover:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-800 hover:border-zinc-600 transition-colors">delay →</button>
         </div>
       </div>
