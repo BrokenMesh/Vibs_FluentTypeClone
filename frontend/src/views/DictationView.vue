@@ -61,8 +61,8 @@
         </div>
         <div class="flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.dictation?.new ?? 0 }} new</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.dictation?.due ?? 0 }} due</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveNew }} new</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveDue }} due</span>
           <span v-if="mode === 'challenge'" class="text-xs text-zinc-600">1.5× points</span>
           <span v-if="isReview" class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">↩ review</span>
           <span v-else class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">✦ new</span>
@@ -179,7 +179,18 @@ const fetchError = ref('');
 const currentSentence = ref(null);
 const isReview = ref(false);
 const doneForToday = ref(false);
-const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 } });
+const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, limits: { dailyNewLimit: 10, dailyDueLimit: 30 }, todayProgress: { typing: { new: 0, due: 0 }, dictation: { new: 0, due: 0 } } });
+
+const effectiveNew = computed(() => {
+  const lim = queue.value.limits?.dailyNewLimit ?? 10;
+  const done = queue.value.todayProgress?.dictation?.new ?? 0;
+  return Math.min(queue.value.dictation?.new ?? 0, Math.max(0, lim - done));
+});
+const effectiveDue = computed(() => {
+  const lim = queue.value.limits?.dailyDueLimit ?? 30;
+  const done = queue.value.todayProgress?.dictation?.due ?? 0;
+  return Math.min(queue.value.dictation?.due ?? 0, Math.max(0, lim - done));
+});
 const mode = ref('challenge');
 const userInput = ref('');
 const inputEl = ref(null);
@@ -366,8 +377,13 @@ async function loadSentence() {
     if (res.data.done) { doneForToday.value = true; return; }
     currentSentence.value = res.data.sentence;
     isReview.value = res.data.isReview;
-    if (isReview.value) queue.value.dictation.due = Math.max(0, (queue.value.dictation?.due ?? 1) - 1);
-    else queue.value.dictation.new = Math.max(0, (queue.value.dictation?.new ?? 1) - 1);
+    if (isReview.value) {
+      queue.value.dictation.due = Math.max(0, (queue.value.dictation?.due ?? 1) - 1);
+      if (queue.value.todayProgress?.dictation) queue.value.todayProgress.dictation.due++;
+    } else {
+      queue.value.dictation.new = Math.max(0, (queue.value.dictation?.new ?? 1) - 1);
+      if (queue.value.todayProgress?.dictation) queue.value.todayProgress.dictation.new++;
+    }
 
     await nextTick();
     inputEl.value?.focus();

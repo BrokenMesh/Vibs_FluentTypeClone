@@ -58,13 +58,13 @@
           <div class="flex flex-col gap-1.5 shrink-0">
             <div class="flex items-center gap-1.5">
               <span class="text-xs text-zinc-600 w-16 text-right">typing</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.typing?.new ?? 0 }} new</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.typing?.due ?? 0 }} due</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveQueue.typing.new }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveQueue.typing.due }} due</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="text-xs text-zinc-600 w-16 text-right">dictation</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.dictation?.new ?? 0 }} new</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.dictation?.due ?? 0 }} due</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveQueue.dictation.new }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveQueue.dictation.due }} due</span>
             </div>
             <p class="text-xs text-zinc-700 text-right">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</p>
           </div>
@@ -155,7 +155,26 @@ function updateCountdown() {
   const m = Math.floor((diff % 3600000) / 60000);
   nextWordCountdown.value = `${h}h ${m}m`;
 }
-const queue = ref({ dailyWord: null, typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, totalToday: 0, dailyBatchSize: 10 });
+const queue = ref({ dailyWord: null, typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, totalToday: 0, dailyBatchSize: 10, limits: { dailyNewLimit: 10, dailyDueLimit: 30 }, todayProgress: { typing: { new: 0, due: 0 }, dictation: { new: 0, due: 0 } } });
+
+function capCount(raw, limit, doneToday) {
+  return Math.min(raw, Math.max(0, limit - doneToday));
+}
+const effectiveQueue = computed(() => {
+  const q = queue.value;
+  const lim = q.limits ?? { dailyNewLimit: 10, dailyDueLimit: 30 };
+  const prog = q.todayProgress ?? { typing: { new: 0, due: 0 }, dictation: { new: 0, due: 0 } };
+  return {
+    typing: {
+      new: capCount(q.typing?.new ?? 0, lim.dailyNewLimit, prog.typing?.new ?? 0),
+      due: capCount(q.typing?.due ?? 0, lim.dailyDueLimit, prog.typing?.due ?? 0),
+    },
+    dictation: {
+      new: capCount(q.dictation?.new ?? 0, lim.dailyNewLimit, prog.dictation?.new ?? 0),
+      due: capCount(q.dictation?.due ?? 0, lim.dailyDueLimit, prog.dictation?.due ?? 0),
+    },
+  };
+});
 const activityMap = ref({});
 
 // Build a 16-week (112-day) grid: array of 16 weeks, each with 7 day cells
@@ -227,7 +246,7 @@ async function fetchStats() {
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 
   stats.value = {
-    dueCount: (queueRes.data.typing?.due ?? 0) + (queueRes.data.dictation?.due ?? 0),
+    dueCount: effectiveQueue.value.typing.due + effectiveQueue.value.dictation.due,
     avgAccuracy: avg,
     directRate: queueRes.data.directRate,
   };

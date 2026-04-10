@@ -61,8 +61,8 @@
         </div>
         <div class="flex flex-wrap gap-2 items-center">
           <span v-if="mode === 'challenge' && started" class="text-xs text-zinc-600">{{ elapsedSeconds }}s</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ queue.typing?.new ?? 0 }} new</span>
-          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ queue.typing?.due ?? 0 }} due</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveNew }} new</span>
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveDue }} due</span>
           <span class="text-xs text-zinc-600">{{ skillDisplay }}</span>
           <span v-if="isReview" class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">↩ review</span>
           <span v-else class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">✦ new</span>
@@ -184,7 +184,18 @@ const fetchError = ref('');
 const currentSentence = ref(null);
 const isReview = ref(false);
 const doneForToday = ref(false);
-const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 } });
+const queue = ref({ typing: { due: 0, new: 0 }, dictation: { due: 0, new: 0 }, limits: { dailyNewLimit: 10, dailyDueLimit: 30 }, todayProgress: { typing: { new: 0, due: 0 }, dictation: { new: 0, due: 0 } } });
+
+const effectiveNew = computed(() => {
+  const lim = queue.value.limits?.dailyNewLimit ?? 10;
+  const done = queue.value.todayProgress?.typing?.new ?? 0;
+  return Math.min(queue.value.typing?.new ?? 0, Math.max(0, lim - done));
+});
+const effectiveDue = computed(() => {
+  const lim = queue.value.limits?.dailyDueLimit ?? 30;
+  const done = queue.value.todayProgress?.typing?.due ?? 0;
+  return Math.min(queue.value.typing?.due ?? 0, Math.max(0, lim - done));
+});
 const mode = ref('challenge');
 const userInput = ref('');
 const inputEl = ref(null);
@@ -371,8 +382,13 @@ async function loadSentence() {
     currentSentence.value = res.data.sentence;
     isReview.value = res.data.isReview;
     // Decrement count optimistically so header updates immediately
-    if (isReview.value) queue.value.typing.due = Math.max(0, (queue.value.typing?.due ?? 1) - 1);
-    else queue.value.typing.new = Math.max(0, (queue.value.typing?.new ?? 1) - 1);
+    if (isReview.value) {
+      queue.value.typing.due = Math.max(0, (queue.value.typing?.due ?? 1) - 1);
+      if (queue.value.todayProgress?.typing) queue.value.todayProgress.typing.due++;
+    } else {
+      queue.value.typing.new = Math.max(0, (queue.value.typing?.new ?? 1) - 1);
+      if (queue.value.todayProgress?.typing) queue.value.todayProgress.typing.new++;
+    }
     resetState();
   } catch (e) {
     fetchError.value = e.response?.data?.error || 'Failed to load sentence';
