@@ -37,6 +37,38 @@ router.get('/:id', (req, res) => {
   res.json(profile);
 });
 
+router.put('/:id/settings', (req, res) => {
+  const db = getDb();
+  const profile = db.prepare(
+    'SELECT id FROM language_profiles WHERE id = ? AND user_id = ?'
+  ).get(req.params.id, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const { dailyNewLimit, dailyDueLimit, dailyBatchSize } = req.body;
+  const updates = [];
+  const params = [];
+
+  if (dailyNewLimit !== undefined) {
+    const v = Math.max(1, Math.min(200, parseInt(dailyNewLimit) || 10));
+    updates.push('daily_new_limit = ?'); params.push(v);
+  }
+  if (dailyDueLimit !== undefined) {
+    const v = Math.max(1, Math.min(500, parseInt(dailyDueLimit) || 30));
+    updates.push('daily_due_limit = ?'); params.push(v);
+  }
+  if (dailyBatchSize !== undefined) {
+    const v = Math.max(1, Math.min(50, parseInt(dailyBatchSize) || 10));
+    updates.push('daily_batch_size = ?'); params.push(v);
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+  params.push(req.params.id);
+  db.prepare(`UPDATE language_profiles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const updated = db.prepare('SELECT * FROM language_profiles WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const profile = db.prepare(

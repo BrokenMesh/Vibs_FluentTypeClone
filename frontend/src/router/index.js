@@ -41,6 +41,10 @@ const routes = [
     component: () => import('../views/HistoryView.vue'),
   },
   {
+    path: '/settings',
+    component: () => import('../views/SettingsView.vue'),
+  },
+  {
     path: '/admin',
     component: () => import('../views/AdminView.vue'),
   },

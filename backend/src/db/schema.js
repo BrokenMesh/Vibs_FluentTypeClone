@@ -32,6 +32,17 @@ export function initDb(dbPath = './data/fluenttype.db') {
     db.exec("UPDATE sentence_reviews SET track = 'dictation' WHERE mode IN ('dictation', 'dictation-practice')");
   }
 
+  const profileCols = db.prepare("PRAGMA table_info(language_profiles)").all();
+  if (profileCols.length && !profileCols.some(c => c.name === 'daily_new_limit')) {
+    db.exec("ALTER TABLE language_profiles ADD COLUMN daily_new_limit INTEGER NOT NULL DEFAULT 10");
+  }
+  if (profileCols.length && !profileCols.some(c => c.name === 'daily_due_limit')) {
+    db.exec("ALTER TABLE language_profiles ADD COLUMN daily_due_limit INTEGER NOT NULL DEFAULT 30");
+  }
+  if (profileCols.length && !profileCols.some(c => c.name === 'daily_batch_size')) {
+    db.exec("ALTER TABLE language_profiles ADD COLUMN daily_batch_size INTEGER NOT NULL DEFAULT 10");
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +59,9 @@ export function initDb(dbPath = './data/fluenttype.db') {
       native_language TEXT NOT NULL,
       skill_score REAL NOT NULL DEFAULT 0,
       xp INTEGER NOT NULL DEFAULT 0,
+      daily_new_limit INTEGER NOT NULL DEFAULT 10,
+      daily_due_limit INTEGER NOT NULL DEFAULT 30,
+      daily_batch_size INTEGER NOT NULL DEFAULT 10,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 

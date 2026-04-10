@@ -11,6 +11,7 @@
         <RouterLink to="/dictate" class="btn-ghost text-sm px-3 py-1.5 rounded">dictate</RouterLink>
         <RouterLink to="/vocabulary" class="btn-ghost text-sm px-3 py-1.5 rounded">vocab</RouterLink>
         <RouterLink to="/history" class="btn-ghost text-sm px-3 py-1.5 rounded">history</RouterLink>
+        <RouterLink to="/settings" class="btn-ghost text-sm px-3 py-1.5 rounded">settings</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="btn-ghost text-sm px-3 py-1.5 rounded text-zinc-500">admin</RouterLink>
 
         <div class="ml-3 flex items-center gap-2">
@@ -55,6 +56,7 @@
         <RouterLink to="/dictate" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">dictate</RouterLink>
         <RouterLink to="/vocabulary" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">vocab</RouterLink>
         <RouterLink to="/history" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">history</RouterLink>
+        <RouterLink to="/settings" class="btn-ghost text-sm px-3 py-2 rounded text-left" @click="menuOpen = false">settings</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="btn-ghost text-sm px-3 py-2 rounded text-left text-zinc-500" @click="menuOpen = false">admin</RouterLink>
         <button @click="handleLogout" class="btn-ghost text-sm px-3 py-2 rounded text-left text-zinc-500 hover:text-zinc-100">
           logout

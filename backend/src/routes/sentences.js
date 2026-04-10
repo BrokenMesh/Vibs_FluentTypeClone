@@ -7,7 +7,7 @@ import { sm2Update, skillDelta } from '../services/sm2.js';
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
 
-const DAILY_BATCH_SIZE = 10;
+const DEFAULT_DAILY_BATCH_SIZE = 10;
 
 export function today() {
   const d = new Date();
@@ -23,6 +23,47 @@ function getProfile(profileId, userId) {
 /** Derive track from mode string */
 function trackForMode(mode) {
   return (mode === 'dictation' || mode === 'dictation-practice') ? 'dictation' : 'typing';
+}
+
+/**
+ * Count sentences where the FIRST non-delay review in `track` happened today.
+ * This is how many "new" cards were introduced in this track today.
+ */
+function countNewToday(db, profileId, track, localDate) {
+  const row = db.prepare(`
+    SELECT COUNT(*) as n FROM (
+      SELECT sentence_id, MIN(reviewed_at) as first_at
+      FROM sentence_reviews
+      WHERE profile_id = ? AND track = ? AND mode NOT IN ('delay')
+      GROUP BY sentence_id
+      HAVING DATE(first_at, 'unixepoch', 'localtime') = ?
+    )
+  `).get(profileId, track, localDate);
+  return row.n;
+}
+
+/**
+ * Count challenge/dictation reviews done today on sentences
+ * that were already seen before today in this track.
+ * This is how many "due" reviews were completed today.
+ */
+function countDueToday(db, profileId, track, localDate) {
+  const row = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM sentence_reviews sr
+    WHERE sr.profile_id = ? AND sr.track = ?
+      AND sr.mode NOT IN ('delay', 'practice', 'dictation-practice')
+      AND DATE(sr.reviewed_at, 'unixepoch', 'localtime') = ?
+      AND EXISTS (
+        SELECT 1 FROM sentence_reviews sr2
+        WHERE sr2.sentence_id = sr.sentence_id
+          AND sr2.profile_id = sr.profile_id
+          AND sr2.track = sr.track
+          AND sr2.mode NOT IN ('delay')
+          AND DATE(sr2.reviewed_at, 'unixepoch', 'localtime') < ?
+      )
+  `).get(profileId, track, localDate, localDate);
+  return row.n;
 }
 
 /**
@@ -78,7 +119,7 @@ async function ensureDailyWord(db, profile) {
  * Uses one AI call for the whole batch — avoids duplicates and ensures diversity.
  * Returns array of saved sentence rows.
  */
-async function generateAndSaveBatch(db, profile, anchorWord, batchDate, count = DAILY_BATCH_SIZE) {
+async function generateAndSaveBatch(db, profile, anchorWord, batchDate, count = DEFAULT_DAILY_BATCH_SIZE) {
   const knownWords = db.prepare(
     'SELECT word FROM vocabulary WHERE profile_id = ? ORDER BY times_seen DESC LIMIT 60'
   ).all(profile.id).map(r => r.word);
@@ -142,8 +183,15 @@ router.get('/next', async (req, res) => {
   const date = today();
   const track = req.query.track === 'dictation' ? 'dictation' : 'typing';
 
-  // 1. Due reviews for this track — most overdue first
-  const due = db.prepare(`
+  const dailyNewLimit = profile.daily_new_limit ?? 10;
+  const dailyDueLimit = profile.daily_due_limit ?? 30;
+  const dailyBatchSize = profile.daily_batch_size ?? DEFAULT_DAILY_BATCH_SIZE;
+
+  const newToday = countNewToday(db, profile.id, track, date);
+  const dueToday = countDueToday(db, profile.id, track, date);
+
+  // 1. Due reviews for this track — most overdue first (skip if daily due limit reached)
+  const due = dueToday >= dailyDueLimit ? null : db.prepare(`
     SELECT s.*,
       sr.ease_factor as sr_ease, sr.interval_days as sr_interval, sr.next_review as sr_next_review
     FROM sentences s
@@ -164,8 +212,8 @@ router.get('/next', async (req, res) => {
     return res.json({ sentence: due, isReview: true, dailyWord, track });
   }
 
-  // 2. Any sentence never reviewed in this track (carry over from any batch date)
-  const newAny = db.prepare(`
+  // 2. Any sentence never reviewed in this track — skip if daily new limit reached
+  const newAny = newToday >= dailyNewLimit ? null : db.prepare(`
     SELECT s.* FROM sentences s
     WHERE s.profile_id = ?
       AND NOT EXISTS (
@@ -181,18 +229,23 @@ router.get('/next', async (req, res) => {
     return res.json({ sentence: newAny, isReview: false, dailyWord, track });
   }
 
+  // If both limits are hit, tell the client we're done for today
+  if (newToday >= dailyNewLimit && dueToday >= dailyDueLimit) {
+    return res.json({ done: true, limitReached: true });
+  }
+
   // 3. No unreviewed left — generate today's batch if incomplete
   const todayCount = db.prepare(
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
 
-  if (todayCount >= DAILY_BATCH_SIZE) {
+  if (todayCount >= dailyBatchSize) {
     return res.json({ done: true, nextBatchDate: date });
   }
 
   // Generate today's full batch in one AI call
   const dailyWord = await ensureDailyWord(db, profile);
-  const toGenerate = DAILY_BATCH_SIZE - todayCount;
+  const toGenerate = dailyBatchSize - todayCount;
   console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
 
   let saved;
@@ -275,6 +328,15 @@ router.get('/queue', async (req, res) => {
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
 
+  const dailyNewLimit = profile.daily_new_limit ?? 10;
+  const dailyDueLimit = profile.daily_due_limit ?? 30;
+  const dailyBatchSize = profile.daily_batch_size ?? DEFAULT_DAILY_BATCH_SIZE;
+
+  const newTodayTyping = countNewToday(db, profile.id, 'typing', date);
+  const newTodayDictation = countNewToday(db, profile.id, 'dictation', date);
+  const dueTodayTyping = countDueToday(db, profile.id, 'typing', date);
+  const dueTodayDictation = countDueToday(db, profile.id, 'dictation', date);
+
   // Direct rate: fraction of challenge-attempted sentences with no prior practice in the same track
   const rateRow = db.prepare(`
     SELECT
@@ -302,9 +364,14 @@ router.get('/queue', async (req, res) => {
     typing:    { due: dueForTrack('typing'),    new: newForTrack('typing')    },
     dictation: { due: dueForTrack('dictation'), new: newForTrack('dictation') },
     totalToday,
-    dailyBatchSize: DAILY_BATCH_SIZE,
+    dailyBatchSize,
     dailyWord,
     directRate,
+    limits: { dailyNewLimit, dailyDueLimit, dailyBatchSize },
+    todayProgress: {
+      typing:    { new: newTodayTyping,    due: dueTodayTyping    },
+      dictation: { new: newTodayDictation, due: dueTodayDictation },
+    },
   });
 });
 
