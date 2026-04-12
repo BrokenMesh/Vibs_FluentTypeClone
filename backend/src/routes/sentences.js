@@ -444,13 +444,21 @@ router.post('/:sentenceId/review', (req, res) => {
 
   let easeFactor, intervalDays, nextReview;
 
+  const practiceMode = mode === 'dictation' ? 'dictation-practice' : 'practice';
+  const practicedFirst = (mode === 'challenge' || mode === 'dictation') && existingReview?.mode === practiceMode;
+
   if (mode === 'practice' || mode === 'dictation-practice') {
     // Practice never advances the SM-2 schedule for this track
     easeFactor = existingReview?.ease_factor ?? 2.5;
     intervalDays = existingReview?.interval_days ?? 1;
     nextReview = existingReview?.next_review ?? Math.floor(Date.now() / 1000);
+  } else if (practicedFirst) {
+    // Practiced before challenging — card resets to due tomorrow (user needed the hint)
+    easeFactor = existingReview?.ease_factor ?? 2.5;
+    intervalDays = 1;
+    nextReview = Math.floor(Date.now() / 1000) + 86400;
   } else {
-    // challenge or dictation — advance SM-2
+    // Clean challenge — advance SM-2 normally
     ({ easeFactor, intervalDays, nextReview } = sm2Update({
       easeFactor: existingReview?.ease_factor ?? 2.5,
       intervalDays: existingReview?.interval_days ?? 1,
@@ -467,11 +475,8 @@ router.post('/:sentenceId/review', (req, res) => {
   let newSkillScore = profile.skill_score;
   let xpGained = 0;
   if (mode === 'challenge' || mode === 'dictation') {
-    // Halve points if the user used practice mode in this track before challenging
-    const practiceMode = mode === 'dictation' ? 'dictation-practice' : 'practice';
-    const practicedFirst = existingReview?.mode === practiceMode;
     const modeMultiplier = mode === 'dictation' ? 1.5 : 1;
-    const multiplier = (practicedFirst ? 0.5 : 1) * modeMultiplier;
+    const multiplier = (practicedFirst ? 0.5 : 1.0) * modeMultiplier;
     const delta = skillDelta(score, profile.skill_score) * multiplier;
     newSkillScore = Math.max(0, Math.min(10000, profile.skill_score + delta));
     xpGained = Math.round(score * sentence.word_count * 10 * multiplier);
