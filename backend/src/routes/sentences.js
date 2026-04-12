@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb, rowid } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
-import { generateSentenceBatch, generateWordOfDay } from '../services/ai.js';
+import { generateSentenceBatch, generateLearnerProfile, generateWordOfDay } from '../services/ai.js';
 import { sm2Update, skillDelta } from '../services/sm2.js';
 
 const router = Router({ mergeParams: true });
@@ -130,10 +130,44 @@ async function generateAndSaveBatch(db, profile, anchorWord, batchDate, count = 
     'SELECT target_text FROM sentences WHERE profile_id = ? ORDER BY created_at DESC LIMIT 60'
   ).all(profile.id).map(r => r.target_text);
 
+  // Fetch real performance data to build an adaptive learner profile
+  const goodSentences = db.prepare(`
+    SELECT s.target_text, sr.score
+    FROM sentences s
+    JOIN sentence_reviews sr ON sr.sentence_id = s.id AND sr.profile_id = s.profile_id
+    WHERE s.profile_id = ? AND sr.mode IN ('challenge', 'dictation') AND sr.score >= 0.8
+    ORDER BY sr.reviewed_at DESC LIMIT 8
+  `).all(profile.id);
+
+  const badSentences = db.prepare(`
+    SELECT s.target_text, sr.score
+    FROM sentences s
+    JOIN sentence_reviews sr ON sr.sentence_id = s.id AND sr.profile_id = s.profile_id
+    WHERE s.profile_id = ? AND sr.mode IN ('challenge', 'dictation') AND sr.score < 0.6
+    ORDER BY sr.reviewed_at DESC LIMIT 8
+  `).all(profile.id);
+
+  // Build AI-generated learner profile from actual performance data
+  let learnerProfile = '';
+  try {
+    learnerProfile = await generateLearnerProfile({
+      targetLanguage: profile.target_language,
+      nativeLanguage: profile.native_language,
+      skillScore: profile.skill_score,
+      goodSentences,
+      badSentences,
+      knownWords,
+    });
+    console.log(`Learner profile for ${profile.id}:\n${learnerProfile}`);
+  } catch (e) {
+    console.warn('generateLearnerProfile failed, proceeding without profile:', e.message);
+  }
+
   const generated = await generateSentenceBatch({
     targetLanguage: profile.target_language,
     nativeLanguage: profile.native_language,
     skillScore: profile.skill_score,
+    learnerProfile,
     knownWords,
     anchorWord: anchorWord?.word ?? null,
     count,

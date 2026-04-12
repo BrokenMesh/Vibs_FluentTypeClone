@@ -7,7 +7,7 @@ function stripMarkdown(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
 
-// CEFR levels mapped to skill score 0–1000
+// CEFR levels mapped to skill score 0–10,000
 const CEFR_LEVELS = [
   { label: 'A1', min: 0,    max: 1666  },
   { label: 'A2', min: 1667, max: 3333  },
@@ -93,7 +93,7 @@ Where source_text is a natural ${nativeLanguage} translation the user will read,
   };
 }
 
-// Pre-assigned topic pool for batch generation — shuffled per call to ensure variety
+// Topic pool for batch generation — shuffled per call to ensure variety
 const TOPIC_POOL = [
   'a missed train or bus', 'cooking a new recipe', 'a job interview', 'visiting a museum',
   'a broken appliance at home', 'morning routine', 'a sports match', 'gardening',
@@ -108,71 +108,6 @@ const TOPIC_POOL = [
   'a school reunion', 'a wedding ceremony', 'a job resignation', 'a pet doing something funny',
 ];
 
-// Grammar structure pools tiered by CEFR level.
-// Each level's pool is used for the current level + one level above (for stretch).
-const STRUCTURE_POOLS = {
-  A1: [
-    'simple affirmative statement in present tense with je, tu, or il/elle',
-    'simple negative sentence using ne… pas in present tense',
-    'yes/no question using est-ce que',
-    'sentence using être or avoir with a noun or adjective',
-    'basic imperative command (one verb)',
-    'exclamation expressing a feeling (Quelle chance ! C\'est super !)',
-    'question using où or comment in present tense',
-    'sentence with a colour, number, or basic adjective',
-  ],
-  A2: [
-    'affirmative statement with a frequency adverb (souvent, toujours, jamais)',
-    'past narrative using passé composé with avoir',
-    'past narrative using passé composé with être (verbs of movement)',
-    'near-future sentence using aller + infinitive',
-    'sentence using a modal verb: devoir, pouvoir, or vouloir',
-    'yes/no question using inversion',
-    'open question using quand, pourquoi, or combien',
-    'sentence describing location or direction (prepositions: dans, sur, devant)',
-  ],
-  B1: [
-    'imperfect tense describing a past habit or ongoing state',
-    'sentence with a pronominal/reflexive verb (se lever, se souvenir)',
-    'relative clause using qui or que',
-    'comparison using plus… que, moins… que, or aussi… que',
-    'negative sentence using ne… jamais, ne… rien, or ne… plus',
-    'sentence using y or en as a pronoun',
-    'sentence using depuis + present tense',
-    'indirect object pronoun (lui, leur)',
-  ],
-  B2: [
-    'conditional hypothesis: "Si + imparfait, conditionnel présent"',
-    'relative clause using dont or où',
-    'sentence using a gerund (en + present participle)',
-    'reported speech using il a dit que…',
-    'passive voice construction',
-  ],
-  C1: [
-    'conditional hypothesis: "Si + plus-que-parfait, conditionnel passé"',
-    'subjunctive after vouloir que or il faut que',
-    'concessive clause using bien que + subjunctive',
-    'sentence with complex nominal phrase and relative clause',
-  ],
-  C2: [
-    'literary past tense (passé simple)',
-    'sentence with multiple subordinate clauses and a nuanced connector (néanmoins, en revanche)',
-    'emphatic structure using c\'est… qui/que',
-    'absolute participial phrase',
-  ],
-};
-
-const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-
-/** Return grammar structures appropriate for this CEFR level.
- *  Includes current level + one above for a small stretch challenge.
- */
-function structuresForCefr(cefr) {
-  const idx = CEFR_ORDER.indexOf(cefr);
-  const levels = CEFR_ORDER.slice(Math.max(0, idx), Math.min(CEFR_ORDER.length, idx + 2));
-  return levels.flatMap(l => STRUCTURE_POOLS[l] ?? []);
-}
-
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -183,13 +118,79 @@ function shuffle(arr) {
 }
 
 /**
+ * Analyse a learner's actual performance data and produce a concise pedagogical
+ * brief that the sentence generator will use to calibrate difficulty and structure.
+ *
+ * Language-agnostic: the AI reasons about real demonstrated patterns, not
+ * hardcoded grammar labels. Works for any target language.
+ *
+ * Returns a plain-text brief (3-5 sentences).
+ */
+export async function generateLearnerProfile({
+  targetLanguage,
+  nativeLanguage,
+  skillScore,
+  goodSentences = [],  // [{ target_text, score }]  high accuracy
+  badSentences  = [],  // [{ target_text, score }]  low accuracy
+  knownWords    = [],
+}) {
+  const cefr = cefrLevel(skillScore);
+  const wordCount = targetWordCount(skillScore);
+
+  const goodList = goodSentences.length
+    ? goodSentences.map(s => `  • "${s.target_text}" (${Math.round(s.score * 100)}%)`).join('\n')
+    : '  (none yet — learner is just starting out)';
+  const badList = badSentences.length
+    ? badSentences.map(s => `  • "${s.target_text}" (${Math.round(s.score * 100)}%)`).join('\n')
+    : '  (none yet)';
+  const vocabSample = knownWords.slice(0, 40).join(', ') || 'none yet';
+
+  const prompt = `You are an expert language pedagogy analyst.
+
+A learner is studying ${targetLanguage} (native language: ${nativeLanguage}).
+CEFR level: ${cefr} (skill score ${skillScore}/10000).
+Target sentence length at this level: ~${wordCount} words.
+
+PERFORMANCE DATA
+Sentences they handle well (≥ 80% accuracy):
+${goodList}
+
+Sentences they struggle with (< 60% accuracy):
+${badList}
+
+Known vocabulary (most frequently seen): ${vocabSample}
+
+TASK
+Write a concise instructional brief (3-5 sentences) for an AI that will generate ${targetLanguage} practice sentences for this learner today. The brief must:
+1. Identify what grammatical patterns and vocabulary this learner has demonstrably mastered — be specific and language-aware (name actual tenses, structures, word classes as they exist in ${targetLanguage}).
+2. Identify specific gaps or patterns that are tripping them up.
+3. Specify the ideal balance for today's batch: what proportion should consolidate the comfort zone vs. gently stretch into the next difficulty tier, and what that stretch should concretely look like.
+
+Crucially: base your analysis on the evidence above, not on assumptions about CEFR labels. Do NOT mention CEFR level names in your output. Output only the brief, no preamble or headings.`;
+
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 300,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return message.content[0].text.trim();
+}
+
+/**
  * Generate a batch of diverse sentences in one AI call.
- * Returns an array of { sourceText, targetText, words }, deduplicated against existingSentences.
+ *
+ * Takes a learnerProfile string (from generateLearnerProfile) which describes
+ * the user's actual demonstrated abilities — no hardcoded grammar pools.
+ * This makes generation language-agnostic and adaptive.
+ *
+ * Returns an array of { sourceText, targetText, words }, deduplicated.
  */
 export async function generateSentenceBatch({
   targetLanguage,
   nativeLanguage,
   skillScore,
+  learnerProfile = '',
   knownWords = [],
   anchorWord = null,
   count = 10,
@@ -197,59 +198,56 @@ export async function generateSentenceBatch({
 }) {
   const cefr = cefrLevel(skillScore);
   const wordCount = targetWordCount(skillScore);
-  const knownList = knownWords.slice(0, 60).join(', ') || 'none yet';
   const avoidList = existingSentences.slice(0, 40).map(s => `"${s}"`).join('\n') || 'none';
 
-  // Pre-assign a unique topic + grammar structure to each slot
+  // Pre-assign a unique topic to each slot; vocab mode split 30% reinforce / 70% challenge
   const topics = shuffle(TOPIC_POOL).slice(0, count);
-  const structurePool = structuresForCefr(cefr);
-  // Cycle through the pool if count > pool size
-  const structures = shuffle(structurePool).concat(shuffle(structurePool)).slice(0, count);
-
-  // ~30% of slots reinforce known vocab, ~70% introduce new words
   const slots = Array.from({ length: count }, (_, i) => {
     const vocab = i < Math.ceil(count * 0.3)
-      ? `REINFORCE: use at least one word from the known list naturally`
-      : `CHALLENGE: introduce vocabulary NOT in the known list — teach the user something new`;
+      ? `REINFORCE: use vocabulary the learner already knows naturally`
+      : `CHALLENGE: introduce vocabulary the learner hasn't encountered yet`;
     const anchor = anchorWord
       ? ` | MANDATORY: the word "${anchorWord}" must appear in target_text verbatim`
       : '';
-    return `${i + 1}. Topic: "${topics[i]}" | Grammar: ${structures[i]} | Vocab: ${vocab}${anchor}`;
+    return `${i + 1}. Topic: "${topics[i]}" | Vocab: ${vocab}${anchor}`;
   }).join('\n');
 
   const anchorInstruction = anchorWord
-    ? `\nCRITICAL RULE: every single sentence MUST contain the exact ${targetLanguage} word "${anchorWord}". If a sentence cannot use it naturally given its topic, restructure the topic — do NOT omit the word under any circumstances.\n`
+    ? `\nCRITICAL RULE: every single sentence MUST contain the exact ${targetLanguage} word "${anchorWord}". Restructure the topic if needed — never omit the word.\n`
     : '';
 
-  const prompt = `You are an expert ${targetLanguage} language teacher creating practice sentences for a learner.
+  const profileSection = learnerProfile
+    ? `LEARNER PROFILE (derived from their actual performance — use this to calibrate difficulty, vocabulary, and grammar structures):\n${learnerProfile}`
+    : `LEARNER PROFILE: ${cefr}-level learner of ${targetLanguage} with no performance history yet. Use appropriate ${cefr} patterns and common vocabulary.`;
 
-LEARNER PROFILE
-- Native language: ${nativeLanguage}
-- Target language: ${targetLanguage}
-- CEFR level: ${cefr} (${skillScore}/10000)
-- Target sentence length: ~${wordCount} words
-- Known vocabulary: ${knownList}
+  const prompt = `You are an expert ${targetLanguage} language teacher creating adaptive practice sentences.
+
+${profileSection}
 ${anchorInstruction}
 TASK
-Generate exactly ${count} ${targetLanguage} sentences, one per numbered slot below. Each slot specifies the topic, grammar structure, and vocabulary mode — follow them strictly.
+Generate exactly ${count} ${targetLanguage} sentences — one per numbered slot. Each slot specifies the real-world topic and vocabulary mode.
+
+Target sentence length: ~${wordCount} words.
+Translations into: ${nativeLanguage}.
 
 SLOTS
 ${slots}
 
-GLOBAL RULES (apply to every sentence)
-- Match ${cefr} grammar complexity — no simpler, no harder
-- Be vivid and specific; avoid generic or textbook-bland phrasing
-- No two sentences may share the same subject, verb, or opening pattern
-- Do NOT reproduce any of these existing sentences:
+GLOBAL RULES
+- Choose grammar structures based on the learner profile above — stay close to their demonstrated level with only gentle stretches
+- Make each topic vivid and specific; avoid textbook-bland phrasing
+- No two sentences may share the same subject, opening word, or sentence structure
+- Vary the sentence types across the batch: statements, questions, negations, commands — mix them
+- Do NOT reproduce any of these already-used sentences:
 ${avoidList}
 
 OUTPUT FORMAT
-Respond ONLY with a valid JSON array — no markdown, no explanation, no extra keys.
+Respond ONLY with a valid JSON array — no markdown, no explanation.
 Each element: {"target_text": "...", "source_text": "...", "words": ["word1", ...]}
 - target_text: the ${targetLanguage} sentence
 - source_text: a fluent, natural ${nativeLanguage} translation
 - words: lowercase array of key ${targetLanguage} vocabulary from that sentence (no punctuation)
-Return exactly ${count} objects in the same order as the slots.`;
+Return exactly ${count} objects in slot order.`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
