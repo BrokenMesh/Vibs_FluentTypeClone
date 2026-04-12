@@ -108,24 +108,70 @@ const TOPIC_POOL = [
   'a school reunion', 'a wedding ceremony', 'a job resignation', 'a pet doing something funny',
 ];
 
-// Grammar structure pool to enforce sentence type variety
-const STRUCTURE_POOL = [
-  'affirmative statement in present tense with a frequency adverb (toujours, souvent, jamais…)',
-  'yes/no question using inversion or est-ce que',
-  'past narrative using passé composé (avoir/être + past participle)',
-  'imperative / direct command or advice',
-  'sentence using a modal verb: devoir, pouvoir, or vouloir',
-  'near-future sentence using "aller + infinitive"',
-  'conditional hypothesis: "Si... [imparfait], ... [conditionnel]"',
-  'exclamation or strong emotional reaction',
-  'sentence with a pronominal/reflexive verb (se lever, se souvenir…)',
-  'negative sentence using ne… pas, ne… jamais, or ne… rien',
-  'comparison sentence using plus… que, moins… que, or aussi… que',
-  'relative clause using qui, que, or dont',
-  'open question using où, quand, pourquoi, comment, or combien',
-  'imperfect tense describing a past habit or ongoing state',
-  'sentence using an indirect object pronoun (lui, leur, y, en)',
-];
+// Grammar structure pools tiered by CEFR level.
+// Each level's pool is used for the current level + one level above (for stretch).
+const STRUCTURE_POOLS = {
+  A1: [
+    'simple affirmative statement in present tense with je, tu, or il/elle',
+    'simple negative sentence using ne… pas in present tense',
+    'yes/no question using est-ce que',
+    'sentence using être or avoir with a noun or adjective',
+    'basic imperative command (one verb)',
+    'exclamation expressing a feeling (Quelle chance ! C\'est super !)',
+    'question using où or comment in present tense',
+    'sentence with a colour, number, or basic adjective',
+  ],
+  A2: [
+    'affirmative statement with a frequency adverb (souvent, toujours, jamais)',
+    'past narrative using passé composé with avoir',
+    'past narrative using passé composé with être (verbs of movement)',
+    'near-future sentence using aller + infinitive',
+    'sentence using a modal verb: devoir, pouvoir, or vouloir',
+    'yes/no question using inversion',
+    'open question using quand, pourquoi, or combien',
+    'sentence describing location or direction (prepositions: dans, sur, devant)',
+  ],
+  B1: [
+    'imperfect tense describing a past habit or ongoing state',
+    'sentence with a pronominal/reflexive verb (se lever, se souvenir)',
+    'relative clause using qui or que',
+    'comparison using plus… que, moins… que, or aussi… que',
+    'negative sentence using ne… jamais, ne… rien, or ne… plus',
+    'sentence using y or en as a pronoun',
+    'sentence using depuis + present tense',
+    'indirect object pronoun (lui, leur)',
+  ],
+  B2: [
+    'conditional hypothesis: "Si + imparfait, conditionnel présent"',
+    'relative clause using dont or où',
+    'sentence using a gerund (en + present participle)',
+    'reported speech using il a dit que…',
+    'passive voice construction',
+  ],
+  C1: [
+    'conditional hypothesis: "Si + plus-que-parfait, conditionnel passé"',
+    'subjunctive after vouloir que or il faut que',
+    'concessive clause using bien que + subjunctive',
+    'sentence with complex nominal phrase and relative clause',
+  ],
+  C2: [
+    'literary past tense (passé simple)',
+    'sentence with multiple subordinate clauses and a nuanced connector (néanmoins, en revanche)',
+    'emphatic structure using c\'est… qui/que',
+    'absolute participial phrase',
+  ],
+};
+
+const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+/** Return grammar structures appropriate for this CEFR level.
+ *  Includes current level + one above for a small stretch challenge.
+ */
+function structuresForCefr(cefr) {
+  const idx = CEFR_ORDER.indexOf(cefr);
+  const levels = CEFR_ORDER.slice(Math.max(0, idx), Math.min(CEFR_ORDER.length, idx + 2));
+  return levels.flatMap(l => STRUCTURE_POOLS[l] ?? []);
+}
 
 function shuffle(arr) {
   const a = [...arr];
@@ -156,7 +202,9 @@ export async function generateSentenceBatch({
 
   // Pre-assign a unique topic + grammar structure to each slot
   const topics = shuffle(TOPIC_POOL).slice(0, count);
-  const structures = shuffle(STRUCTURE_POOL).slice(0, count);
+  const structurePool = structuresForCefr(cefr);
+  // Cycle through the pool if count > pool size
+  const structures = shuffle(structurePool).concat(shuffle(structurePool)).slice(0, count);
 
   // ~30% of slots reinforce known vocab, ~70% introduce new words
   const slots = Array.from({ length: count }, (_, i) => {

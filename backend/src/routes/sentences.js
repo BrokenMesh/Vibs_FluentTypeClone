@@ -30,11 +30,13 @@ function trackForMode(mode) {
  * This is how many "new" cards were introduced in this track today.
  */
 function countNewToday(db, profileId, track, localDate) {
+  // Only count sentences first *challenged* (not practiced) today
   const row = db.prepare(`
     SELECT COUNT(*) as n FROM (
       SELECT sentence_id, MIN(reviewed_at) as first_at
       FROM sentence_reviews
-      WHERE profile_id = ? AND track = ? AND mode NOT IN ('delay')
+      WHERE profile_id = ? AND track = ?
+        AND mode NOT IN ('delay', 'practice', 'dictation-practice')
       GROUP BY sentence_id
       HAVING DATE(first_at, 'unixepoch', 'localtime') = ?
     )
@@ -212,15 +214,18 @@ router.get('/next', async (req, res) => {
     return res.json({ sentence: due, isReview: true, dailyWord, track });
   }
 
-  // 2. Any sentence never reviewed in this track — skip if daily new limit reached
+  // 2. Any sentence never challenged in this track (practice reviews don't consume "new" status)
+  //    Oldest batch first so the user works through sentences in the order they were generated.
+  //    Skip if daily new limit reached.
   const newAny = newToday >= dailyNewLimit ? null : db.prepare(`
     SELECT s.* FROM sentences s
     WHERE s.profile_id = ?
       AND NOT EXISTS (
         SELECT 1 FROM sentence_reviews sr
         WHERE sr.sentence_id = s.id AND sr.profile_id = ? AND sr.track = ?
+          AND sr.mode NOT IN ('practice', 'dictation-practice', 'delay')
       )
-    ORDER BY s.batch_date DESC, s.id ASC
+    ORDER BY s.batch_date ASC, s.id ASC
     LIMIT 1
   `).get(profile.id, profile.id, track);
 
