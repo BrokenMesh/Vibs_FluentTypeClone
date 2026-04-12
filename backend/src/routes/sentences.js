@@ -455,6 +455,7 @@ router.post('/:sentenceId/review', (req, res) => {
       easeFactor: existingReview?.ease_factor ?? 2.5,
       intervalDays: existingReview?.interval_days ?? 1,
       score,
+      intervalModifier: profile.srs_strength ?? 1.0,
     }));
   }
 

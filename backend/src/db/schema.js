@@ -42,6 +42,9 @@ export function initDb(dbPath = './data/fluenttype.db') {
   if (profileCols.length && !profileCols.some(c => c.name === 'daily_batch_size')) {
     db.exec("ALTER TABLE language_profiles ADD COLUMN daily_batch_size INTEGER NOT NULL DEFAULT 10");
   }
+  if (profileCols.length && !profileCols.some(c => c.name === 'srs_strength')) {
+    db.exec("ALTER TABLE language_profiles ADD COLUMN srs_strength REAL NOT NULL DEFAULT 1.0");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -62,6 +65,7 @@ export function initDb(dbPath = './data/fluenttype.db') {
       daily_new_limit INTEGER NOT NULL DEFAULT 10,
       daily_due_limit INTEGER NOT NULL DEFAULT 30,
       daily_batch_size INTEGER NOT NULL DEFAULT 10,
+      srs_strength REAL NOT NULL DEFAULT 1.0,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 

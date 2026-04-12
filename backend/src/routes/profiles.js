@@ -44,7 +44,7 @@ router.put('/:id/settings', (req, res) => {
   ).get(req.params.id, req.userId);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
-  const { dailyNewLimit, dailyDueLimit, dailyBatchSize } = req.body;
+  const { dailyNewLimit, dailyDueLimit, dailyBatchSize, srsStrength } = req.body;
   const updates = [];
   const params = [];
 
@@ -59,6 +59,10 @@ router.put('/:id/settings', (req, res) => {
   if (dailyBatchSize !== undefined) {
     const v = Math.max(1, Math.min(50, parseInt(dailyBatchSize) || 10));
     updates.push('daily_batch_size = ?'); params.push(v);
+  }
+  if (srsStrength !== undefined) {
+    const v = Math.max(0.3, Math.min(3.0, parseFloat(srsStrength) || 1.0));
+    updates.push('srs_strength = ?'); params.push(v);
   }
 
   if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
