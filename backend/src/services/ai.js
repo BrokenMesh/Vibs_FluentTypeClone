@@ -7,6 +7,27 @@ function stripMarkdown(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
 
+// Extract the first JSON object or array from a string even if there is prose around it
+function extractJson(text) {
+  const clean = stripMarkdown(text);
+  // Try direct parse first (fastest path)
+  try { return JSON.parse(clean); } catch (_) { /* fall through */ }
+  // Find the first { or [ and extract to matching close
+  const start = clean.search(/[{[]/);
+  if (start === -1) throw new Error('No JSON found in AI response');
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < clean.length; i++) {
+    const c = clean[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\' && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') { depth--; if (depth === 0) return JSON.parse(clean.slice(start, i + 1)); }
+  }
+  throw new Error('Unbalanced JSON in AI response');
+}
+
 // CEFR levels mapped to skill score 0–10,000
 const CEFR_LEVELS = [
   { label: 'A1', min: 0,    max: 1666  },
@@ -255,8 +276,7 @@ Return exactly ${count} objects in slot order.`;
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const raw = stripMarkdown(message.content[0].text.trim());
-  const parsed = JSON.parse(raw);
+  const parsed = extractJson(message.content[0].text.trim());
   if (!Array.isArray(parsed)) throw new Error('AI returned non-array for batch');
 
   // Deduplicate against existing sentences and within the batch itself
@@ -303,6 +323,8 @@ Respond ONLY with valid JSON (no markdown): {"word": "...", "translation": "..."
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const raw = stripMarkdown(message.content[0].text.trim());
-  return JSON.parse(raw);
+  const parsed = extractJson(message.content[0].text.trim());
+  if (!parsed.word || !parsed.translation) throw new Error('generateWordOfDay: missing word or translation in response');
+  console.log(`Word of the day: "${parsed.word}" (${parsed.translation})`);
+  return parsed;
 }

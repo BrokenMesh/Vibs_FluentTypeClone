@@ -143,14 +143,16 @@ const profile = useProfileStore();
 const loading = ref(false);
 const stats = ref({ dueCount: 0, avgAccuracy: null, directRate: null });
 
-// Countdown to midnight (when next word of the day is chosen)
+// Countdown to 3 AM (when the next word of the day is chosen)
 const nextWordCountdown = ref('');
 let countdownInterval = null;
 function updateCountdown() {
   const now = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0);
-  const diff = midnight - now;
+  const next3am = new Date(now);
+  // If it's already past 3 AM, the next reset is 3 AM tomorrow
+  if (now.getHours() >= 3) next3am.setDate(next3am.getDate() + 1);
+  next3am.setHours(3, 0, 0, 0);
+  const diff = next3am - now;
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   nextWordCountdown.value = `${h}h ${m}m`;

@@ -9,8 +9,13 @@ router.use(requireAuth);
 
 const DEFAULT_DAILY_BATCH_SIZE = 10;
 
+/**
+ * The "day" resets at 3 AM so the word of the day and daily batch roll over
+ * at a sensible hour rather than midnight.
+ */
 export function today() {
   const d = new Date();
+  if (d.getHours() < 3) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -484,7 +489,15 @@ router.post('/:sentenceId/review', (req, res) => {
   let easeFactor, intervalDays, nextReview;
 
   const practiceMode = mode === 'dictation' ? 'dictation-practice' : 'practice';
-  const practicedFirst = (mode === 'challenge' || mode === 'dictation') && existingReview?.mode === practiceMode;
+  // "Practiced first" only counts if the practice happened within the last 30 minutes
+  // (same session). A practice done days or weeks ago should not penalise this attempt.
+  const sessionWindow = Math.floor(Date.now() / 1000) - 1800;
+  const recentPractice = (mode === 'challenge' || mode === 'dictation')
+    ? db.prepare(
+        `SELECT 1 FROM sentence_reviews WHERE sentence_id = ? AND profile_id = ? AND track = ? AND mode = ? AND reviewed_at >= ?`
+      ).get(sentence.id, profile.id, track, practiceMode, sessionWindow)
+    : null;
+  const practicedFirst = !!recentPractice;
 
   if (mode === 'practice' || mode === 'dictation-practice') {
     // Practice never advances the SM-2 schedule for this track
