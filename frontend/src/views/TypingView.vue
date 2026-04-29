@@ -42,6 +42,7 @@
       :typed-words="typedWords"
       :target-words-arr="targetWords"
       :word-results-arr="wordResults"
+      :streak="sessionStreak"
       @next="loadSentence"
     />
 
@@ -220,6 +221,7 @@ const userTyped = ref('');
 // Results
 const lastScore = ref(0);
 const lastWpm = ref(0);
+const sessionStreak = ref(0);
 const xpGained = ref(0);
 const newSkill = ref(0);
 const daysUntilReview = ref(1);
@@ -339,6 +341,8 @@ function submitPracticeWord() {
 async function submitReview(score, wpm) {
   lastScore.value = score;
   lastWpm.value = wpm;
+  if (score >= 0.8) sessionStreak.value++;
+  else sessionStreak.value = 0;
   try {
     const res = await api.post(
       `/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/review`,

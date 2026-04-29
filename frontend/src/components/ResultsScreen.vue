@@ -1,6 +1,6 @@
 <template>
   <div class="card text-center space-y-6 py-8">
-    <!-- Score ring -->
+    <!-- Score ring (animated on mount) -->
     <div class="flex justify-center">
       <div class="relative w-28 h-28">
         <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
@@ -10,11 +10,12 @@
             :stroke="score >= 0.8 ? '#22c55e' : score >= 0.5 ? '#eab308' : '#ef4444'"
             stroke-width="3"
             stroke-linecap="round"
-            :stroke-dasharray="`${score * 100} 100`"
+            :stroke-dasharray="`${animatedScore * 100} 100`"
+            style="transition: stroke-dasharray 0.8s cubic-bezier(0.4,0,0.2,1)"
           />
         </svg>
         <div class="absolute inset-0 flex flex-col items-center justify-center">
-          <span class="text-2xl font-semibold">{{ Math.round(score * 100) }}%</span>
+          <span class="text-2xl font-semibold">{{ Math.round(animatedScore * 100) }}%</span>
           <span class="text-xs text-zinc-500">accuracy</span>
         </div>
       </div>
@@ -26,7 +27,10 @@
         <div class="text-2xl font-semibold text-zinc-100">{{ wpm }}</div>
         <div class="text-xs text-zinc-500">wpm</div>
       </div>
-      <div v-if="(mode === 'challenge' || mode === 'dictation') && xpGained > 0" class="text-center">
+      <div
+        v-if="(mode === 'challenge' || mode === 'dictation') && xpGained > 0"
+        class="text-center xp-pop"
+      >
         <div class="text-2xl font-semibold text-brand-400">+{{ xpGained }}</div>
         <div class="text-xs text-zinc-500">xp</div>
       </div>
@@ -38,6 +42,13 @@
         <div class="text-lg font-semibold text-zinc-400">practice</div>
         <div class="text-xs text-zinc-500">no points</div>
       </div>
+    </div>
+
+    <!-- Streak badge -->
+    <div v-if="streak >= 3" class="flex justify-center">
+      <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm font-medium streak-pop">
+        🔥 {{ streak }} in a row
+      </span>
     </div>
 
     <!-- Sentence reveal -->
@@ -164,7 +175,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import confetti from 'canvas-confetti';
 import api from '../api/index.js';
 import { cefrOf, cefrNext, ptsToNext } from '../utils/cefr.js';
 
@@ -183,8 +195,40 @@ const props = defineProps({
   typedWords: Array,
   targetWordsArr: Array,
   wordResultsArr: Array,
+  streak: { type: Number, default: 0 },
 });
 defineEmits(['next']);
+
+// Animate score ring from 0 to final value
+const animatedScore = ref(0);
+onMounted(() => {
+  // Tick up over 800ms
+  const target = props.score;
+  const duration = 800;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    animatedScore.value = eased * target;
+    if (t < 1) requestAnimationFrame(tick);
+    else animatedScore.value = target;
+  }
+  requestAnimationFrame(tick);
+
+  // Confetti on excellent score in challenge/dictation modes
+  if (props.score >= 0.9 && (props.mode === 'challenge' || props.mode === 'dictation')) {
+    setTimeout(() => {
+      confetti({
+        particleCount: props.score >= 0.98 ? 120 : 70,
+        spread: 80,
+        origin: { y: 0.4 },
+        colors: ['#22c55e', '#86efac', '#bbf7d0', '#a3e635', '#4ade80'],
+        scalar: 0.9,
+        ticks: 200,
+      });
+    }, 400);
+  }
+});
 
 function cefrLabel(score) { return cefrOf(score).label; }
 function skillNextLabel(score) {
@@ -259,10 +303,8 @@ async function addToVocab() {
     popup.value.word = null;
   } catch (e) {
     if (e.response?.status === 409) {
-      // Word already in vocab — show feedback but don't close
       popup.value.alreadyExists = true;
     }
-    // other errors: silently ignore
   } finally {
     addingWord.value = false;
   }
@@ -281,3 +323,23 @@ async function askClaude() {
   }
 }
 </script>
+
+<style scoped>
+.xp-pop {
+  animation: xp-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: 0.6s;
+}
+@keyframes xp-pop {
+  from { opacity: 0; transform: scale(0.6) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.streak-pop {
+  animation: streak-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: 0.8s;
+}
+@keyframes streak-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  to   { opacity: 1; transform: scale(1); }
+}
+</style>
