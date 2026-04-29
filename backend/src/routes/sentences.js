@@ -84,41 +84,62 @@ async function ensureDailyWord(db, profile) {
   ).get(profile.id, date);
   if (existing) return existing;
 
-  const allWords = db.prepare(
+  // Collect every word to avoid: current vocabulary + all past words of the day
+  const vocabWords = db.prepare(
     'SELECT word FROM vocabulary WHERE profile_id = ?'
-  ).all(profile.id).map(r => r.word);
+  ).all(profile.id).map(r => r.word.toLowerCase().trim());
 
-  let wordData;
-  try {
-    wordData = await generateWordOfDay({
-      targetLanguage: profile.target_language,
-      nativeLanguage: profile.native_language,
-      skillScore: profile.skill_score,
-      existingWords: allWords,
-    });
-  } catch (e) {
-    console.error('generateWordOfDay failed:', e.message);
-    wordData = null;
+  const pastDailyWords = db.prepare(
+    'SELECT word FROM daily_words WHERE profile_id = ?'
+  ).all(profile.id).map(r => r.word.toLowerCase().trim());
+
+  const wordsToAvoid = [...new Set([...vocabWords, ...pastDailyWords])];
+
+  // Try up to 3 times in case the AI returns a known word
+  let wordData = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const candidate = await generateWordOfDay({
+        targetLanguage: profile.target_language,
+        nativeLanguage: profile.native_language,
+        skillScore: profile.skill_score,
+        existingWords: wordsToAvoid,
+      });
+      const lower = candidate.word.toLowerCase().trim();
+      if (wordsToAvoid.includes(lower)) {
+        console.warn(`generateWordOfDay attempt ${attempt}: returned known word "${lower}", retrying…`);
+        wordsToAvoid.push(lower); // add so next attempt also avoids it
+        continue;
+      }
+      wordData = candidate;
+      break;
+    } catch (e) {
+      console.error(`generateWordOfDay attempt ${attempt} failed:`, e.message);
+    }
   }
 
-  if (!wordData) return null;
+  if (!wordData) {
+    console.error('generateWordOfDay: all attempts failed, no word of the day set');
+    return null;
+  }
+
+  const wordLower = wordData.word.toLowerCase().trim();
 
   db.prepare(
     'INSERT INTO daily_words (profile_id, word, translation, date) VALUES (?, ?, ?, ?)'
-  ).run(profile.id, wordData.word.toLowerCase().trim(), wordData.translation, date);
+  ).run(profile.id, wordLower, wordData.translation, date);
 
-  // Also add to vocabulary
+  // Add to vocabulary if not already present (case-insensitive check)
   const wordExists = db.prepare(
-    'SELECT id FROM vocabulary WHERE profile_id = ? AND word = ?'
-  ).get(profile.id, wordData.word.toLowerCase().trim());
+    'SELECT id FROM vocabulary WHERE profile_id = ? AND LOWER(word) = ?'
+  ).get(profile.id, wordLower);
   if (!wordExists) {
     db.prepare(
-      "INSERT INTO vocabulary (profile_id, word, translation, source) VALUES (?, ?, ?, 'ai')"
-    ).run(profile.id, wordData.word.toLowerCase().trim(), wordData.translation);
+      "INSERT INTO vocabulary (profile_id, word, translation, source) VALUES (?, ?, ?, 'word-of-day')"
+    ).run(profile.id, wordLower, wordData.translation);
   }
 
-  const newDailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
-  return newDailyWord;
+  return db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
 }
 
 /**

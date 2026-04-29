@@ -303,19 +303,25 @@ Return exactly ${count} objects in slot order.`;
  * Returns { word, translation }.
  */
 export async function generateWordOfDay({ targetLanguage, nativeLanguage, skillScore, existingWords = [] }) {
-  const existing = existingWords.slice(0, 80).join(', ') || 'none';
   const cefr = cefrLevel(skillScore);
+  // List every word to avoid — truncate to stay within prompt limits
+  const avoidList = existingWords.slice(0, 120).join(', ') || 'none';
 
-  const prompt = `You are a language learning assistant.
-The user is learning ${targetLanguage} (native: ${nativeLanguage}). Level: ${cefr} (${skillScore}/10000).
-Words they already know: ${existing}
+  const prompt = `You are a language learning assistant selecting a daily focus word.
 
-Pick ONE new ${targetLanguage} word that:
-- They don't already know
-- Is common and useful for ${cefr}-level learners
-- Would work well as the focus of several practice sentences
+The learner is studying ${targetLanguage} (native language: ${nativeLanguage}). CEFR level: ${cefr} (${skillScore}/10000).
 
-Respond ONLY with valid JSON (no markdown): {"word": "...", "translation": "..."}`;
+WORDS TO AVOID — do NOT return any of these under any circumstances:
+${avoidList}
+
+Select ONE ${targetLanguage} word that:
+- Is NOT in the list above (this is mandatory — double-check before responding)
+- Is a common, useful word for a ${cefr}-level learner
+- Is a single dictionary word (not a phrase)
+- Works naturally as the focus of several practice sentences
+
+Respond ONLY with valid JSON, nothing else: {"word": "...", "translation": "..."}
+The "translation" must be a concise ${nativeLanguage} translation of the word.`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -325,6 +331,6 @@ Respond ONLY with valid JSON (no markdown): {"word": "...", "translation": "..."
 
   const parsed = extractJson(message.content[0].text.trim());
   if (!parsed.word || !parsed.translation) throw new Error('generateWordOfDay: missing word or translation in response');
-  console.log(`Word of the day: "${parsed.word}" (${parsed.translation})`);
+  console.log(`Word of the day candidate: "${parsed.word}" (${parsed.translation})`);
   return parsed;
 }
