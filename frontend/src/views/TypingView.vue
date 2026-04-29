@@ -341,8 +341,10 @@ function submitPracticeWord() {
 async function submitReview(score, wpm) {
   lastScore.value = score;
   lastWpm.value = wpm;
-  if (score >= 0.8) sessionStreak.value++;
-  else sessionStreak.value = 0;
+  if (mode.value === 'challenge') {
+    if (score >= 0.8) sessionStreak.value++;
+    else sessionStreak.value = 0;
+  }
   try {
     const res = await api.post(
       `/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/review`,

@@ -339,8 +339,10 @@ function submitPracticeWord() {
 
 async function submitReview(score, reviewMode) {
   lastScore.value = score;
-  if (score >= 0.8) sessionStreak.value++;
-  else sessionStreak.value = 0;
+  if (reviewMode === 'dictation') {
+    if (score >= 0.8) sessionStreak.value++;
+    else sessionStreak.value = 0;
+  }
   try {
     const res = await api.post(
       `/profiles/${profile.activeProfile.id}/sentences/${currentSentence.value.id}/review`,
