@@ -227,6 +227,25 @@ export async function generateAndSave(db, profile, anchorWord, existingTexts, ba
   return results[0] ?? null;
 }
 
+router.get('/ensuredayword', async (req, res) => {
+  // Generate today's full batch in one AI call
+  const dailyWord = await ensureDailyWord(db, profile);
+  const toGenerate = dailyBatchSize - todayCount;
+  console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
+
+  let saved;
+  try {
+    saved = await generateAndSaveBatch(db, profile, dailyWord, date, toGenerate);
+  } catch (e) {
+    console.error('Batch sentence generation failed:', e.message);
+    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
+  }
+
+  if (saved.length === 0) {
+    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
+  }
+});
+
 /**
  * GET /profiles/:profileId/sentences/next?track=typing|dictation
  *
@@ -302,25 +321,7 @@ router.get('/next', async (req, res) => {
     return res.json({ done: true, nextBatchDate: date });
   }
 
-  // Generate today's full batch in one AI call
-  const dailyWord = await ensureDailyWord(db, profile);
-  const toGenerate = dailyBatchSize - todayCount;
-  console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
-
-  let saved;
-  try {
-    saved = await generateAndSaveBatch(db, profile, dailyWord, date, toGenerate);
-  } catch (e) {
-    console.error('Batch sentence generation failed:', e.message);
-    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
-  }
-
-  if (saved.length === 0) {
-    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
-  }
-
-  const firstNew = saved.reduce((a, b) => (a.id < b.id ? a : b));
-  return res.json({ sentence: firstNew, isReview: false, dailyWord, track });
+  return res.json({ sentence: newAny, isReview: false, dailyWord, track });
 });
 
 /**

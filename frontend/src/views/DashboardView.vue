@@ -230,6 +230,8 @@ async function fetchStats() {
   if (!profile.activeProfile) return;
   const profileId = profile.activeProfile.id;
 
+  const res = await api.get(`/profiles/${profileId}/sentences/ensuredayword`);
+
   const [sentenceRes, queueRes, activityRes] = await Promise.all([
     api.get(`/profiles/${profileId}/sentences`),
     api.get(`/profiles/${profileId}/sentences/queue`),
