@@ -31,10 +31,8 @@
             <span class="text-zinc-600">{{ nextLabel }}</span>
           </div>
           <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              class="h-full bg-brand-500 rounded-full transition-all duration-700"
-              :style="{ width: barWidth + '%' }"
-            />
+            <div class="h-full bg-brand-500 rounded-full transition-all duration-700"
+              :style="{ width: barWidth + '%' }" />
           </div>
         </div>
 
@@ -58,13 +56,17 @@
           <div class="flex flex-col gap-1.5 shrink-0">
             <div class="flex items-center gap-1.5">
               <span class="text-xs text-zinc-600 w-16 text-right">typing</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveQueue.typing.new }} new</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveQueue.typing.due }} due</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{
+                effectiveQueue.typing.new }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{
+                effectiveQueue.typing.due }} due</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="text-xs text-zinc-600 w-16 text-right">dictation</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{ effectiveQueue.dictation.new }} new</span>
-              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{ effectiveQueue.dictation.due }} due</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{{
+                effectiveQueue.dictation.new }} new</span>
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400">{{
+                effectiveQueue.dictation.due }} due</span>
             </div>
             <p class="text-xs text-zinc-700 text-right">{{ queue.totalToday }}/{{ queue.dailyBatchSize }} today</p>
           </div>
@@ -74,9 +76,11 @@
       <!-- Stats grid -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="streak" :value="streak + (streak === 1 ? ' day' : ' days')" color="brand" />
-        <StatCard label="direct rate" :value="stats.directRate !== null ? Math.round(stats.directRate * 100) + '%' : '—'" />
+        <StatCard label="direct rate"
+          :value="stats.directRate !== null ? Math.round(stats.directRate * 100) + '%' : '—'" />
         <StatCard label="reviews due" :value="stats.dueCount" color="yellow" />
-        <StatCard label="avg accuracy" :value="stats.avgAccuracy !== null ? Math.round(stats.avgAccuracy * 100) + '%' : '—'" />
+        <StatCard label="avg accuracy"
+          :value="stats.avgAccuracy !== null ? Math.round(stats.avgAccuracy * 100) + '%' : '—'" />
       </div>
 
       <!-- Activity grid -->
@@ -84,12 +88,9 @@
         <p class="text-xs text-zinc-600 uppercase tracking-wider">activity — last 16 weeks</p>
         <div class="flex gap-1 justify-center flex-wrap">
           <div v-for="(week, wi) in activityGrid" :key="wi" class="flex flex-col gap-1">
-            <div
-              v-for="(day, di) in week"
-              :key="di"
+            <div v-for="(day, di) in week" :key="di"
               :title="day.date + ': ' + day.count + ' review' + (day.count !== 1 ? 's' : '')"
-              :class="['w-3 h-3 rounded-sm flex-shrink-0', activityColor(day.count)]"
-            />
+              :class="['w-3 h-3 rounded-sm flex-shrink-0', activityColor(day.count)]" />
           </div>
         </div>
         <div class="flex justify-between text-xs text-zinc-700">
@@ -102,17 +103,12 @@
       <div v-if="profile.profiles.length > 1" class="card">
         <p class="text-xs text-zinc-600 mb-3 uppercase tracking-wider">Your profiles</p>
         <div class="space-y-2">
-          <button
-            v-for="p in profile.profiles"
-            :key="p.id"
-            @click="profile.setActive(p)"
-            :class="[
-              'w-full text-left flex items-center justify-between px-3 py-2 rounded border transition-colors',
-              p.id === profile.activeProfile.id
-                ? 'border-brand-700 bg-brand-500/5'
-                : 'border-zinc-800 hover:border-zinc-700'
-            ]"
-          >
+          <button v-for="p in profile.profiles" :key="p.id" @click="profile.setActive(p)" :class="[
+            'w-full text-left flex items-center justify-between px-3 py-2 rounded border transition-colors',
+            p.id === profile.activeProfile.id
+              ? 'border-brand-700 bg-brand-500/5'
+              : 'border-zinc-800 hover:border-zinc-700'
+          ]">
             <span>{{ p.native_language }} → <span class="text-brand-400">{{ p.target_language }}</span></span>
             <span class="text-xs text-zinc-600">skill {{ Math.round(p.skill_score) }}</span>
           </button>
@@ -213,7 +209,7 @@ const streak = computed(() => {
 
 function activityColor(count) {
   if (count === 0) return 'bg-zinc-800';
-  if (count < 5)  return 'bg-brand-900';
+  if (count < 5) return 'bg-brand-900';
   if (count < 15) return 'bg-brand-700';
   if (count < 30) return 'bg-brand-600';
   if (count < 50) return 'bg-brand-500';

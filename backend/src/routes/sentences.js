@@ -265,7 +265,7 @@ router.get('/next', async (req, res) => {
       HAVING MAX(reviewed_at)
     ) sr ON sr.sentence_id = s.id
     WHERE s.profile_id = ? AND sr.next_review <= ?
-    ORDER BY sr.next_review ASC
+    ORDER BY s.created_at ASC
     LIMIT 1
   `).get(profile.id, track, profile.id, now);
 
@@ -294,12 +294,6 @@ router.get('/next', async (req, res) => {
     return res.json({ sentence: newAny, isReview: false, dailyWord, track });
   }
 
-  // If both limits are hit, tell the client we're done for today
-  if (newToday >= dailyNewLimit && dueToday >= dailyDueLimit) {
-    return res.json({ done: true, limitReached: true });
-  }
-
-  // 3. No unreviewed left — generate today's batch if incomplete
   const todayCount = db.prepare(
     'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
   ).get(profile.id, date).n;
