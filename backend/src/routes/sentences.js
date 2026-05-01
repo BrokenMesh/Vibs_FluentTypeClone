@@ -228,9 +228,25 @@ export async function generateAndSave(db, profile, anchorWord, existingTexts, ba
 }
 
 router.get('/ensuredayword', async (req, res) => {
-  // Generate today's full batch in one AI call
+  const profile = getProfile(req.params.profileId, req.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  const db = getDb();
+  const date = today();
+  const dailyBatchSize = profile.daily_batch_size ?? DEFAULT_DAILY_BATCH_SIZE;
+
   const dailyWord = await ensureDailyWord(db, profile);
+
+  const todayCount = db.prepare(
+    'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
+  ).get(profile.id, date).n;
+
   const toGenerate = dailyBatchSize - todayCount;
+
+  if (toGenerate <= 0) {
+    return res.json({ ok: true, generated: 0 });
+  }
+
   console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
 
   let saved;
@@ -244,6 +260,8 @@ router.get('/ensuredayword', async (req, res) => {
   if (saved.length === 0) {
     return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
   }
+
+  res.json({ ok: true, generated: saved.length });
 });
 
 /**
