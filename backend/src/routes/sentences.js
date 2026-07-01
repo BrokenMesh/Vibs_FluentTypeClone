@@ -9,6 +9,12 @@ router.use(requireAuth);
 
 const DEFAULT_DAILY_BATCH_SIZE = 10;
 
+// Coalesces concurrent /ensuredayword calls per profile. Without this, two
+// requests arriving while a (multi-second, two-AI-call) generation is still
+// in-flight both read the same pre-insert todayCount and each generate a
+// full batch, overshooting dailyBatchSize.
+const inFlightGeneration = new Map();
+
 /**
  * The "day" resets at 3 AM so the word of the day and daily batch roll over
  * at a sensible hour rather than midnight.
@@ -242,33 +248,39 @@ router.get('/ensuredayword', async (req, res) => {
   const date = today();
   const dailyBatchSize = profile.daily_batch_size ?? DEFAULT_DAILY_BATCH_SIZE;
 
-  const dailyWord = await ensureDailyWord(db, profile);
-
-  const todayCount = db.prepare(
-    'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
-  ).get(profile.id, date).n;
-
-  const toGenerate = dailyBatchSize - todayCount;
-
-  if (toGenerate <= 0) {
+  // A generation is already running for this profile — piggyback on it instead
+  // of racing it with a second batch.
+  if (inFlightGeneration.has(profile.id)) {
+    await inFlightGeneration.get(profile.id).catch(() => {});
     return res.json({ ok: true, generated: 0 });
   }
 
-  console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
+  const run = (async () => {
+    const dailyWord = await ensureDailyWord(db, profile);
 
-  let saved;
+    const todayCount = db.prepare(
+      'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
+    ).get(profile.id, date).n;
+
+    const toGenerate = dailyBatchSize - todayCount;
+    if (toGenerate <= 0) return 0;
+
+    console.log(`Generating batch of ${toGenerate} sentences for profile ${profile.id} (batch ${date})`);
+    const saved = await generateAndSaveBatch(db, profile, dailyWord, date, toGenerate);
+    if (saved.length === 0) throw new Error('AI produced no usable sentences');
+    return saved.length;
+  })();
+
+  inFlightGeneration.set(profile.id, run);
   try {
-    saved = await generateAndSaveBatch(db, profile, dailyWord, date, toGenerate);
+    const generated = await run;
+    res.json({ ok: true, generated });
   } catch (e) {
     console.error('Batch sentence generation failed:', e.message);
-    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
+    res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
+  } finally {
+    inFlightGeneration.delete(profile.id);
   }
-
-  if (saved.length === 0) {
-    return res.status(502).json({ error: 'Failed to generate sentences. Please try again.' });
-  }
-
-  res.json({ ok: true, generated: saved.length });
 });
 
 /**

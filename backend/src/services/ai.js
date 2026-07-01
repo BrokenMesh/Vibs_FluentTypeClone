@@ -235,12 +235,28 @@ export async function generateSentenceBatch({
   // (e.g. an unrelated sentence with "how are you?" awkwardly appended).
   const anchorSlotCount = anchorWord ? Math.max(1, Math.min(count, Math.ceil(count * 0.3))) : 0;
 
+  // REINFORCE slots are pinned to a specific known word each, so the sentence
+  // actually practices that word instead of just being "similarly easy" but
+  // otherwise unrelated to anything the learner has seen before. Cycle through
+  // known vocabulary if there are fewer known words than reinforce slots — with
+  // a near-empty vocabulary (new account) this naturally repeats the handful of
+  // known words across most of the batch, which is the intended behaviour.
+  const reinforceCount = count - challengeCount;
+  const reinforcePool = shuffle(knownWords);
+  const reinforceWords = Array.from({ length: reinforceCount }, (_, i) =>
+    reinforcePool.length ? reinforcePool[i % reinforcePool.length] : null
+  );
+
   // Pre-assign a unique topic to each slot
   const topics = shuffle(TOPIC_POOL).slice(0, count);
   const slots = Array.from({ length: count }, (_, i) => {
-    const vocab = i < count - challengeCount
-      ? `REINFORCE: use vocabulary the learner already knows naturally`
-      : `CHALLENGE: introduce vocabulary the learner hasn't encountered yet`;
+    const isReinforce = i < reinforceCount;
+    const pinnedWord = isReinforce ? reinforceWords[i] : null;
+    const vocab = isReinforce
+      ? (pinnedWord
+          ? `REINFORCE: MUST naturally include the known word "${pinnedWord}"`
+          : `REINFORCE: use simple, common vocabulary appropriate for this level`)
+      : `CHALLENGE: introduce ONE new word the learner hasn't encountered yet`;
     const anchor = anchorWord && i < anchorSlotCount
       ? ` | MANDATORY: the word "${anchorWord}" must appear naturally in target_text`
       : '';
@@ -305,6 +321,12 @@ Return exactly ${count} objects in slot order.`;
     // Only the designated anchor slots are required to contain the word (model non-compliance)
     if (anchorLower && i < anchorSlotCount && !norm.includes(anchorLower)) {
       console.warn(`Dropped sentence missing required anchor "${anchorWord}": ${item.target_text}`);
+      continue;
+    }
+    // Reinforce slots are pinned to a known word — drop if the model ignored it
+    const pinned = i < reinforceCount ? reinforceWords[i] : null;
+    if (pinned && !norm.includes(pinned.toLowerCase())) {
+      console.warn(`Dropped sentence missing pinned reinforce word "${pinned}": ${item.target_text}`);
       continue;
     }
     seen.add(norm);
