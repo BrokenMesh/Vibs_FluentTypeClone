@@ -284,10 +284,10 @@ router.get('/next', async (req, res) => {
 
   const dailyNewLimit = profile.daily_new_limit ?? 10;
   const dailyDueLimit = profile.daily_due_limit ?? 30;
-  const dailyBatchSize = profile.daily_batch_size ?? DEFAULT_DAILY_BATCH_SIZE;
 
   const newToday = countNewToday(db, profile.id, track, date);
   const dueToday = countDueToday(db, profile.id, track, date);
+  const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
 
   // 1. Due reviews for this track — most overdue first (skip if daily due limit reached)
   const due = dueToday >= dailyDueLimit ? null : db.prepare(`
@@ -307,7 +307,6 @@ router.get('/next', async (req, res) => {
   `).get(profile.id, track, profile.id, now);
 
   if (due) {
-    const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
     return res.json({ sentence: due, isReview: true, dailyWord, track });
   }
 
@@ -327,19 +326,12 @@ router.get('/next', async (req, res) => {
   `).get(profile.id, profile.id, track);
 
   if (newAny) {
-    const dailyWord = db.prepare('SELECT * FROM daily_words WHERE profile_id = ? AND date = ?').get(profile.id, date);
     return res.json({ sentence: newAny, isReview: false, dailyWord, track });
   }
 
-  const todayCount = db.prepare(
-    'SELECT COUNT(*) as n FROM sentences WHERE profile_id = ? AND batch_date = ?'
-  ).get(profile.id, date).n;
-
-  if (todayCount >= dailyBatchSize) {
-    return res.json({ done: true, nextBatchDate: date });
-  }
-
-  return res.json({ sentence: newAny, isReview: false, dailyWord, track });
+  // 3. Nothing due or new left to serve right now — regardless of whether today's
+  //    batch is already full, there's nothing more this call can hand back.
+  return res.json({ done: true, nextBatchDate: date });
 });
 
 /**
@@ -508,10 +500,16 @@ router.post('/:sentenceId/review', (req, res) => {
   ).get(req.params.sentenceId, profile.id);
   if (!sentence) return res.status(404).json({ error: 'Sentence not found' });
 
-  const { mode, score, wpm } = req.body;
+  const { mode } = req.body;
+  let { score, wpm } = req.body;
   if (!mode || score === undefined || wpm === undefined) {
     return res.status(400).json({ error: 'mode, score, wpm are required' });
   }
+  // Clamp to sane ranges — score is a 0-1 accuracy ratio, wpm has a generous
+  // real-world ceiling. Prevents a buggy or malicious client from granting
+  // unbounded XP/skill via the formulas below.
+  score = Math.min(1, Math.max(0, score));
+  wpm = Math.min(400, Math.max(0, wpm));
 
   const track = trackForMode(mode);
 

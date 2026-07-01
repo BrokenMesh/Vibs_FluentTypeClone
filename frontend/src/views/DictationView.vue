@@ -172,6 +172,7 @@ import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
 import ResultsScreen from '../components/ResultsScreen.vue';
+import { challengeScore, wordMatches, practiceScore, updateStreak } from '../utils/scoring.js';
 
 const profile = useProfileStore();
 
@@ -311,8 +312,7 @@ function submitChallenge() {
   const target = currentSentence.value.target_text;
   userTyped.value = typed;
 
-  const mistakes = [...target].filter((c, i) => typed[i] !== c).length;
-  const score = Math.max(0, 1 - mistakes / 10);
+  const score = challengeScore(typed, target);
 
   finished.value = true;
   submitReview(score, 'dictation');
@@ -321,7 +321,7 @@ function submitChallenge() {
 function submitPracticeWord() {
   const currentWord = targetWords.value[practiceWordIndex.value];
   const typed = userInput.value.trim();
-  const correct = typed.toLowerCase() === currentWord.toLowerCase();
+  const correct = wordMatches(typed, currentWord);
 
   wordResults.value.push(correct);
   typedWords.value.push(typed);
@@ -330,8 +330,7 @@ function submitPracticeWord() {
   practiceWordIndex.value++;
 
   if (practiceWordIndex.value >= targetWords.value.length) {
-    const mistakes = wordResults.value.filter(r => !r).length;
-    const score = Math.max(0, 1 - mistakes / 10);
+    const score = practiceScore(wordResults.value);
     finished.value = true;
     submitReview(score, 'dictation-practice');
   }
@@ -340,8 +339,7 @@ function submitPracticeWord() {
 async function submitReview(score, reviewMode) {
   lastScore.value = score;
   if (reviewMode === 'dictation') {
-    if (score >= 0.8) sessionStreak.value++;
-    else sessionStreak.value = 0;
+    sessionStreak.value = updateStreak(sessionStreak.value, score);
   }
   try {
     const res = await api.post(

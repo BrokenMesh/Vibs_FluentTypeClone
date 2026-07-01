@@ -34,6 +34,6 @@ export function ptsToNext(score) {
 export function levelProgress(score) {
   const current = cefrOf(score);
   const next = cefrNext(score);
-  const width = next ? next.min - current.min : 167; // C2 assumed same width
+  const width = next ? next.min - current.min : 10000 - current.min;
   return Math.min(1000, Math.round(((score - current.min) / width) * 1000));
 }

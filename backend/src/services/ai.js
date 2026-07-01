@@ -3,12 +3,12 @@ import Anthropic from '@anthropic-ai/sdk';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Strip markdown code fences the model sometimes adds despite instructions
-function stripMarkdown(text) {
+export function stripMarkdown(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
 
 // Extract the first JSON object or array from a string even if there is prose around it
-function extractJson(text) {
+export function extractJson(text) {
   const clean = stripMarkdown(text);
   // Try direct parse first (fastest path)
   try { return JSON.parse(clean); } catch (_) { /* fall through */ }

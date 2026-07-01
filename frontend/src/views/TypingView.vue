@@ -172,6 +172,7 @@
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 
 import { cefrOf, cefrNext, ptsToNext } from '../utils/cefr.js';
+import { challengeScore, wordMatches, practiceScore, computeWpm, updateStreak } from '../utils/scoring.js';
 import { RouterLink } from 'vue-router';
 import api from '../api/index.js';
 import { useProfileStore } from '../stores/profile.js';
@@ -308,12 +309,9 @@ function submitChallenge() {
   clearInterval(timerInterval);
   userTyped.value = typed;
 
-  // 10 mistakes = 0%, 0 mistakes = 100%
-  const mistakes = [...target].filter((c, i) => typed[i] !== c).length;
-  const score = Math.max(0, 1 - mistakes / 10);
-
-  const elapsed = (Date.now() - (startTime.value || Date.now())) / 1000 / 60;
-  const wpm = elapsed > 0 ? Math.round(typed.split(/\s+/).length / elapsed) : 0;
+  const score = challengeScore(typed, target);
+  const elapsedMs = Date.now() - (startTime.value || Date.now());
+  const wpm = computeWpm(typed, elapsedMs);
 
   finished.value = true;
   submitReview(score, wpm);
@@ -322,7 +320,7 @@ function submitChallenge() {
 function submitPracticeWord() {
   const currentWord = targetWords.value[practiceWordIndex.value];
   const typed = userInput.value.trim();
-  const correct = typed.toLowerCase() === currentWord.toLowerCase();
+  const correct = wordMatches(typed, currentWord);
 
   wordResults.value.push(correct);
   typedWords.value.push(typed);
@@ -331,8 +329,7 @@ function submitPracticeWord() {
   practiceWordIndex.value++;
 
   if (practiceWordIndex.value >= targetWords.value.length) {
-    const mistakes = wordResults.value.filter(r => !r).length;
-    const score = Math.max(0, 1 - mistakes / 10);
+    const score = practiceScore(wordResults.value);
     finished.value = true;
     submitReview(score, 0);
   }
@@ -342,8 +339,7 @@ async function submitReview(score, wpm) {
   lastScore.value = score;
   lastWpm.value = wpm;
   if (mode.value === 'challenge') {
-    if (score >= 0.8) sessionStreak.value++;
-    else sessionStreak.value = 0;
+    sessionStreak.value = updateStreak(sessionStreak.value, score);
   }
   try {
     const res = await api.post(

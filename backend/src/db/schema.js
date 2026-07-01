@@ -90,6 +90,7 @@ export function initDb(dbPath = './data/fluenttype.db') {
       target_text TEXT NOT NULL,
       difficulty REAL NOT NULL DEFAULT 0,
       word_count INTEGER NOT NULL DEFAULT 0,
+      batch_date TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 

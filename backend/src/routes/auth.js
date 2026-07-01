@@ -19,7 +19,8 @@ function hashToken(token) {
 }
 
 router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, password } = req.body;
+  const email = req.body.email ? req.body.email.toLowerCase().trim() : req.body.email;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email and password are required' });
   }
@@ -30,7 +31,7 @@ router.post('/register', async (req, res) => {
   const db = getDb();
 
   // Check email whitelist
-  const allowed = db.prepare('SELECT id FROM email_whitelist WHERE email = ?').get(email.toLowerCase().trim());
+  const allowed = db.prepare('SELECT id FROM email_whitelist WHERE email = ?').get(email);
   if (!allowed) {
     return res.status(403).json({ error: 'This email is not on the access list. Contact the admin.' });
   }
@@ -61,7 +62,8 @@ router.post('/register', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = req.body.email ? req.body.email.toLowerCase().trim() : req.body.email;
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' });
   }
