@@ -311,7 +311,6 @@ Return exactly ${count} objects in slot order.`;
 
   // Deduplicate against existing sentences and within the batch itself
   const seen = new Set(existingSentences.map(s => s.trim().toLowerCase()));
-  const anchorLower = anchorWord ? anchorWord.toLowerCase() : null;
   const results = [];
   for (let i = 0; i < parsed.length; i++) {
     const item = parsed[i];
@@ -319,13 +318,13 @@ Return exactly ${count} objects in slot order.`;
     const norm = item.target_text.trim().toLowerCase();
     if (seen.has(norm)) continue;
     // Only the designated anchor slots are required to contain the word (model non-compliance)
-    if (anchorLower && i < anchorSlotCount && !norm.includes(anchorLower)) {
+    if (anchorWord && i < anchorSlotCount && !sentenceContainsWord(norm, anchorWord, item.words)) {
       console.warn(`Dropped sentence missing required anchor "${anchorWord}": ${item.target_text}`);
       continue;
     }
     // Reinforce slots are pinned to a known word — drop if the model ignored it
     const pinned = i < reinforceCount ? reinforceWords[i] : null;
-    if (pinned && !norm.includes(pinned.toLowerCase())) {
+    if (pinned && !sentenceContainsWord(norm, pinned, item.words)) {
       console.warn(`Dropped sentence missing pinned reinforce word "${pinned}": ${item.target_text}`);
       continue;
     }
@@ -333,6 +332,22 @@ Return exactly ${count} objects in slot order.`;
     results.push({ sourceText: item.source_text, targetText: item.target_text, words: item.words });
   }
   return results;
+}
+
+// Loose "does this sentence use word W" check that tolerates conjugation/declension
+// (e.g. "manger" pinned but the sentence naturally uses "mange"/"mangeons"/"mangent").
+// A strict substring match would reject nearly all natural uses of a pinned verb.
+export function sentenceContainsWord(normalizedText, word, wordsList = []) {
+  const target = word.toLowerCase().trim();
+  if (!target) return true;
+  if (normalizedText.includes(target)) return true;
+  const stemLen = Math.max(3, Math.ceil(target.length * 0.6));
+  const targetStem = target.slice(0, stemLen);
+  const tokens = [
+    ...wordsList.map(w => String(w).toLowerCase()),
+    ...normalizedText.split(/[^\p{L}']+/u).filter(Boolean),
+  ];
+  return tokens.some(t => t.length >= 3 && (t.slice(0, stemLen) === targetStem || t.startsWith(targetStem) || targetStem.startsWith(t)));
 }
 
 /**
