@@ -80,4 +80,33 @@ router.post('/reset-password', async (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/admin/reset-progress
+// Wipes learning data (skill/xp, vocabulary, sentences, reviews, daily words)
+// for every language profile a user has, but keeps their account and profile
+// settings (target/native language, daily limits) intact.
+router.post('/reset-progress', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const profiles = db.prepare('SELECT id FROM language_profiles WHERE user_id = ?').all(user.id);
+
+  const deleteSentences = db.prepare('DELETE FROM sentences WHERE profile_id = ?');
+  const deleteVocabulary = db.prepare('DELETE FROM vocabulary WHERE profile_id = ?');
+  const deleteDailyWords = db.prepare('DELETE FROM daily_words WHERE profile_id = ?');
+  const resetProfile = db.prepare('UPDATE language_profiles SET skill_score = 0, xp = 0 WHERE id = ?');
+
+  for (const profile of profiles) {
+    deleteSentences.run(profile.id); // cascades to sentence_reviews
+    deleteVocabulary.run(profile.id);
+    deleteDailyWords.run(profile.id);
+    resetProfile.run(profile.id);
+  }
+
+  res.json({ ok: true, profilesReset: profiles.length });
+});
+
 export default router;

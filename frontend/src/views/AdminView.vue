@@ -67,6 +67,32 @@
         </div>
       </div>
 
+      <!-- Reset Progress -->
+      <div class="card space-y-4">
+        <h2 class="font-medium">Reset Progress</h2>
+        <p class="text-xs text-zinc-500">
+          Wipes skill/XP, vocabulary, sentences, and review history for every language profile the
+          user has. Their account and profile settings (languages, daily limits) are kept — this
+          cannot be undone.
+        </p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">User email</label>
+            <select v-model="progressEmail" class="input">
+              <option value="">— select user —</option>
+              <option v-for="u in users" :key="u.id" :value="u.email">
+                {{ u.email }} ({{ u.username }})
+              </option>
+            </select>
+          </div>
+          <button @click="resetProgress" class="btn-primary" :disabled="progressLoading || !progressEmail">
+            {{ progressLoading ? 'Resetting…' : 'Reset progress' }}
+          </button>
+          <p v-if="progressMsg" :class="progressOk ? 'text-brand-400' : 'text-red-400'" class="text-sm">{{ progressMsg }}</p>
+        </div>
+      </div>
+
       <!-- Users -->
       <div class="card space-y-3">
         <h2 class="font-medium">Registered Users</h2>
@@ -111,6 +137,11 @@ const newPassword = ref('');
 const resetLoading = ref(false);
 const resetMsg = ref('');
 const resetOk = ref(false);
+
+const progressEmail = ref('');
+const progressLoading = ref(false);
+const progressMsg = ref('');
+const progressOk = ref(false);
 
 function formatDate(ts) {
   return new Date(ts * 1000).toLocaleDateString();
@@ -168,6 +199,22 @@ async function resetPassword() {
     resetOk.value = false;
   } finally {
     resetLoading.value = false;
+  }
+}
+
+async function resetProgress() {
+  if (!confirm(`Reset all learning progress for ${progressEmail.value}? This cannot be undone.`)) return;
+  progressMsg.value = '';
+  progressLoading.value = true;
+  try {
+    const res = await api.post('/admin/reset-progress', { email: progressEmail.value });
+    progressMsg.value = `Progress reset for ${res.data.profilesReset} profile(s).`;
+    progressOk.value = true;
+  } catch (e) {
+    progressMsg.value = e.response?.data?.error || 'Failed to reset progress';
+    progressOk.value = false;
+  } finally {
+    progressLoading.value = false;
   }
 }
 
