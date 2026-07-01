@@ -258,8 +258,14 @@ onMounted(async () => {
   loading.value = true;
   try {
     await profile.fetchProfiles();
-    if (profile.profiles.length > 0 && !profile.activeProfile) {
-      profile.setActive(profile.profiles[0]);
+    if (profile.profiles.length > 0) {
+      // Sync the cached activeProfile to the freshly-fetched server copy so
+      // stats (xp, skill_score) don't stay stale after being changed
+      // elsewhere (e.g. an admin resetting progress).
+      const fresh = profile.activeProfile
+        ? profile.profiles.find(p => p.id === profile.activeProfile.id) ?? profile.profiles[0]
+        : profile.profiles[0];
+      profile.setActive(fresh);
     }
     await fetchStats();
   } finally {
