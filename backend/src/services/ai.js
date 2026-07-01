@@ -221,20 +221,34 @@ export async function generateSentenceBatch({
   const wordCount = targetWordCount(skillScore);
   const avoidList = existingSentences.slice(0, 40).map(s => `"${s}"`).join('\n') || 'none';
 
-  // Pre-assign a unique topic to each slot; vocab mode split 30% reinforce / 70% challenge
+  // How many sentences in this batch introduce brand-new vocabulary. This scales
+  // gently with skill so a beginner (few known words) mostly sees REINFORCE
+  // sentences, with only 1-2 CHALLENGE sentences per batch of 10. A count of 1
+  // (single-sentence generation for a manually-added word) is always a challenge
+  // sentence for that word.
+  const challengeCount = count === 1
+    ? 1
+    : Math.max(1, Math.min(3, Math.round(count * (0.1 + (skillScore / 10000) * 0.2))));
+
+  // Only a handful of slots are required to contain the word-of-the-day anchor —
+  // forcing it into every sentence produces unnatural, stitched-together sentences
+  // (e.g. an unrelated sentence with "how are you?" awkwardly appended).
+  const anchorSlotCount = anchorWord ? Math.max(1, Math.min(count, Math.ceil(count * 0.3))) : 0;
+
+  // Pre-assign a unique topic to each slot
   const topics = shuffle(TOPIC_POOL).slice(0, count);
   const slots = Array.from({ length: count }, (_, i) => {
-    const vocab = i < Math.ceil(count * 0.3)
+    const vocab = i < count - challengeCount
       ? `REINFORCE: use vocabulary the learner already knows naturally`
       : `CHALLENGE: introduce vocabulary the learner hasn't encountered yet`;
-    const anchor = anchorWord
-      ? ` | MANDATORY: the word "${anchorWord}" must appear in target_text verbatim`
+    const anchor = anchorWord && i < anchorSlotCount
+      ? ` | MANDATORY: the word "${anchorWord}" must appear naturally in target_text`
       : '';
     return `${i + 1}. Topic: "${topics[i]}" | Vocab: ${vocab}${anchor}`;
   }).join('\n');
 
   const anchorInstruction = anchorWord
-    ? `\nCRITICAL RULE: every single sentence MUST contain the exact ${targetLanguage} word "${anchorWord}". Restructure the topic if needed — never omit the word.\n`
+    ? `\nSome slots below are marked MANDATORY with the word "${anchorWord}" — only those sentences need to include it naturally, without distorting their topic. Do NOT force it into slots that aren't marked.\n`
     : '';
 
   const profileSection = learnerProfile
@@ -283,13 +297,14 @@ Return exactly ${count} objects in slot order.`;
   const seen = new Set(existingSentences.map(s => s.trim().toLowerCase()));
   const anchorLower = anchorWord ? anchorWord.toLowerCase() : null;
   const results = [];
-  for (const item of parsed) {
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
     if (!item.target_text || !item.source_text || !Array.isArray(item.words)) continue;
     const norm = item.target_text.trim().toLowerCase();
     if (seen.has(norm)) continue;
-    // Drop sentences that don't contain the anchor word (model non-compliance)
-    if (anchorLower && !norm.includes(anchorLower)) {
-      console.warn(`Dropped sentence missing anchor "${anchorWord}": ${item.target_text}`);
+    // Only the designated anchor slots are required to contain the word (model non-compliance)
+    if (anchorLower && i < anchorSlotCount && !norm.includes(anchorLower)) {
+      console.warn(`Dropped sentence missing required anchor "${anchorWord}": ${item.target_text}`);
       continue;
     }
     seen.add(norm);

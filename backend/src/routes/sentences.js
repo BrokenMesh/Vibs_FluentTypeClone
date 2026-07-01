@@ -106,6 +106,13 @@ async function ensureDailyWord(db, profile) {
         existingWords: wordsToAvoid,
       });
       const lower = candidate.word.toLowerCase().trim();
+      // Reject phrases — the anchor mechanism only makes sense for a single word.
+      // A multi-word "word of the day" forces every anchored sentence to awkwardly
+      // stitch an unrelated clause onto the topic (e.g. "...ça va?" tacked onto everything).
+      if (/[\s?!.,;:]/.test(lower)) {
+        console.warn(`generateWordOfDay attempt ${attempt}: returned a phrase, not a word: "${lower}", retrying…`);
+        continue;
+      }
       if (wordsToAvoid.includes(lower)) {
         console.warn(`generateWordOfDay attempt ${attempt}: returned known word "${lower}", retrying…`);
         wordsToAvoid.push(lower); // add so next attempt also avoids it
